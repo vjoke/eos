@@ -101,12 +101,12 @@ public:
                           bool executed, const std::chrono::milliseconds& now,
                           bool& write_ttrace );
 
-   void update_account(const chain::action& act);
+   void update_account( const chain::action_trace& atrace, const chain::action& act);
 
-   void add_pub_keys( const vector<chain::key_weight>& keys, const account_name& name,
+   void add_pub_keys( const string& trx_id_str, const vector<chain::key_weight>& keys, const account_name& name,
                       const permission_name& permission, const std::chrono::milliseconds& now );
    void remove_pub_keys( const account_name& name, const permission_name& permission );
-   void add_account_control( const vector<chain::permission_level_weight>& controlling_accounts,
+   void add_account_control( const string& trx_id_str, const vector<chain::permission_level_weight>& controlling_accounts,
                              const account_name& name, const permission_name& permission,
                              const std::chrono::milliseconds& now );
    void remove_account_control( const account_name& name, const permission_name& permission );
@@ -807,7 +807,7 @@ mongo_db_plugin_impl::add_action_trace( mongocxx::bulk_write& bulk_action_traces
    using bsoncxx::builder::basic::kvp;
 
    if( executed && atrace.receipt.receiver == chain::config::system_account_name ) {
-      update_account( atrace.act );
+      update_account( atrace, atrace.act );
    }
 
    bool added = false;
@@ -1116,7 +1116,8 @@ void mongo_db_plugin_impl::_process_irreversible_block(const chain::block_state_
    }
 }
 
-void mongo_db_plugin_impl::add_pub_keys( const vector<chain::key_weight>& keys, const account_name& name,
+void mongo_db_plugin_impl::add_pub_keys( const string& trx_id_str, 
+                                         const vector<chain::key_weight>& keys, const account_name& name,
                                          const permission_name& permission, const std::chrono::milliseconds& now )
 {
    using bsoncxx::builder::basic::kvp;
@@ -1130,7 +1131,7 @@ void mongo_db_plugin_impl::add_pub_keys( const vector<chain::key_weight>& keys, 
    for( const auto& pub_key_weight : keys ) {
       auto find_doc = bsoncxx::builder::basic::document();
 
-      find_doc.append( kvp( "account", name.to_string()),
+      find_doc.append( kvp( "account", name.to_string()), kvp( "trx_id", trx_id_str),
                        kvp( "public_key", pub_key_weight.key.operator string()),
                        kvp( "permission", permission.to_string()) );
 
@@ -1171,7 +1172,8 @@ void mongo_db_plugin_impl::remove_pub_keys( const account_name& name, const perm
    }
 }
 
-void mongo_db_plugin_impl::add_account_control( const vector<chain::permission_level_weight>& controlling_accounts,
+void mongo_db_plugin_impl::add_account_control( const string& trx_id_str,
+                                                const vector<chain::permission_level_weight>& controlling_accounts,
                                                 const account_name& name, const permission_name& permission,
                                                 const std::chrono::milliseconds& now )
 {
@@ -1186,7 +1188,7 @@ void mongo_db_plugin_impl::add_account_control( const vector<chain::permission_l
    for( const auto& controlling_account : controlling_accounts ) {
       auto find_doc = bsoncxx::builder::basic::document();
 
-      find_doc.append( kvp( "controlled_account", name.to_string()),
+      find_doc.append( kvp( "controlled_account", name.to_string()), kvp( "trx_id", trx_id_str), 
                        kvp( "controlled_permission", permission.to_string()),
                        kvp( "controlling_account", controlling_account.permission.actor.to_string()) );
 
@@ -1230,7 +1232,7 @@ void mongo_db_plugin_impl::remove_account_control( const account_name& name, con
 
 namespace {
 
-void create_account( mongocxx::collection& accounts, const name& name, std::chrono::milliseconds& now ) {
+void create_account( const string& trx_id_str, mongocxx::collection& accounts, const name& name, std::chrono::milliseconds& now ) {
    using namespace bsoncxx::types;
    using bsoncxx::builder::basic::kvp;
    using bsoncxx::builder::basic::make_document;
@@ -1240,7 +1242,7 @@ void create_account( mongocxx::collection& accounts, const name& name, std::chro
 
    const string name_str = name.to_string();
    auto update = make_document(
-         kvp( "$set", make_document( kvp( "name", name_str),
+         kvp( "$set", make_document( kvp( "name", name_str), kvp( "trx_id", trx_id_str),
                                      kvp( "createdAt", b_date{now} ))));
    try {
       if( !accounts.update_one( make_document( kvp( "name", name_str )), update.view(), update_opts )) {
@@ -1253,7 +1255,7 @@ void create_account( mongocxx::collection& accounts, const name& name, std::chro
 
 }
 
-void mongo_db_plugin_impl::update_account(const chain::action& act)
+void mongo_db_plugin_impl::update_account(const chain::action_trace& atrace, const chain::action& act)
 {
    using bsoncxx::builder::basic::kvp;
    using bsoncxx::builder::basic::make_document;
@@ -1263,17 +1265,18 @@ void mongo_db_plugin_impl::update_account(const chain::action& act)
       return;
 
    try {
+      const auto trx_id_str = atrace.trx_id.str();
       if( act.name == newaccount ) {
          std::chrono::milliseconds now = std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::microseconds{fc::time_point::now().time_since_epoch().count()} );
          auto newacc = act.data_as<chain::newaccount>();
 
-         create_account( _accounts, newacc.name, now );
+         create_account( trx_id_str, _accounts, newacc.name, now );
 
-         add_pub_keys( newacc.owner.keys, newacc.name, owner, now );
-         add_account_control( newacc.owner.accounts, newacc.name, owner, now );
-         add_pub_keys( newacc.active.keys, newacc.name, active, now );
-         add_account_control( newacc.active.accounts, newacc.name, active, now );
+         add_pub_keys( trx_id_str, newacc.owner.keys, newacc.name, owner, now );
+         add_account_control( trx_id_str, newacc.owner.accounts, newacc.name, owner, now );
+         add_pub_keys( trx_id_str, newacc.active.keys, newacc.name, active, now );
+         add_account_control( trx_id_str, newacc.active.accounts, newacc.name, active, now );
 
       } else if( act.name == updateauth ) {
          auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1281,8 +1284,8 @@ void mongo_db_plugin_impl::update_account(const chain::action& act)
          const auto update = act.data_as<chain::updateauth>();
          remove_pub_keys(update.account, update.permission);
          remove_account_control(update.account, update.permission);
-         add_pub_keys(update.auth.keys, update.account, update.permission, now);
-         add_account_control(update.auth.accounts, update.account, update.permission, now);
+         add_pub_keys(trx_id_str, update.auth.keys, update.account, update.permission, now);
+         add_account_control(trx_id_str, update.auth.accounts, update.account, update.permission, now);
 
       } else if( act.name == deleteauth ) {
          const auto del = act.data_as<chain::deleteauth>();
@@ -1298,9 +1301,10 @@ void mongo_db_plugin_impl::update_account(const chain::action& act)
 
          auto account = find_account( _accounts, setabi.account );
          if( !account ) {
-            create_account( _accounts, setabi.account, now );
+            create_account( trx_id_str, _accounts, setabi.account, now );
             account = find_account( _accounts, setabi.account );
          }
+         // TODO: should we 
          if( account ) {
             abi_def abi_def = fc::raw::unpack<chain::abi_def>( setabi.abi );
             const string json_str = fc::json::to_string( abi_def );
