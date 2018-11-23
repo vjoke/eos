@@ -12,7 +12,7 @@
 #include "consumer_core.h"
 #include "applied_message.h"
 
-#define TEST_ENV
+// #define TEST_ENV
 
 namespace {
 const char* PUBSUB_URI_OPTION = "pubsub-uri";
@@ -396,13 +396,15 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
                         filter_include( atrace.receipt.receiver, atrace.act.name, atrace.act.authorization );
     write_ttrace |= in_filter;
     if( start_block_reached && store_action_traces && in_filter ) {
+        const chain::base_action_trace& base = atrace; // without inline action traces
         actions.emplace_back( 
             ordered_action_result{
                 atrace.receipt.global_sequence,
                 0, // FIXME: 
                 chain.pending_block_state()->block_num, 
                 chain.pending_block_time(),
-                chain.to_variant_with_abi(atrace, abi_serializer_max_time)
+                chain.to_variant_with_abi(base, abi_serializer_max_time)
+                // chain.to_variant_with_abi(atrace, abi_serializer_max_time)
             }
         );
 
@@ -424,6 +426,7 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
         //         elog( "  JSON: ${j}", ("j", json) );
         //     }
         // }
+        // FIXME: 
         // if( t->receipt.valid() ) {
         //     action_traces_doc.append( kvp( "trx_status", std::string( t->receipt->status ) ) );
         // }
@@ -433,9 +436,9 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
     }
 
     // TODO: split inline transactions 
-    // for( const auto& iline_atrace : atrace.inline_traces ) {
-    //     added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace );
-    // }
+    for( const auto& iline_atrace : atrace.inline_traces ) {
+        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace );
+    }
 
     return added;
 }
