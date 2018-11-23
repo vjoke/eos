@@ -37,13 +37,13 @@ namespace pubsub_message {
         asset        quantity;
         string       memo;
 
-        static chain::account_name get_account() {
-            return N(eosio.token);
-        }
+        // static chain::account_name get_account() {
+        //     return N(eosio.token); // TODO
+        // }
 
-        static chain::action_name get_name() {
-            return N(transfer);
-        }
+        // static chain::action_name get_name() {
+        //     return N(transfer);
+        // }
 
     };
 
@@ -120,6 +120,7 @@ namespace pubsub_runtime {
     };
 } // pubsub_runtime
 
+using pubsub_plugin_impl_ptr = std::shared_ptr<class pubsub_plugin_impl>;
 class pubsub_plugin final : public plugin<pubsub_plugin> {
 public:
     APPBASE_PLUGIN_REQUIRES((chain_plugin))
@@ -129,29 +130,31 @@ public:
     void plugin_initialize(const variables_map& options);
     void plugin_startup();
     void plugin_shutdown();
-    void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_args> &results);
     pubsub_runtime::runtime_status status();
+//     void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_args> &results);
 
-private:
-    void on_transaction(const chain::transaction_trace_ptr& t);
-    void on_block(const chain::block_state_ptr& b);
-    void push_block(const chain::signed_block_ptr& block);
-    void dump();
+// private:
+//     void on_transaction(const chain::transaction_trace_ptr& t);
+//     void on_block(const chain::block_state_ptr& b);
+//     void push_block(const chain::signed_block_ptr& block);
+//     void dump();
     
 private:
-    int64_t m_block_offset;
-    int64_t m_block_margin;
+    // int64_t m_block_offset;
+    // int64_t m_block_margin;
     
-    bool m_activated;
-    std::unique_ptr<consumer<pubsub_message::message_ptr>> m_applied_message_consumer;
+    // bool m_activated;
+    // std::unique_ptr<consumer<pubsub_message::message_ptr>> m_applied_message_consumer;
 
-    fc::optional<boost::signals2::scoped_connection> m_accepted_block_connection;
-    fc::optional<boost::signals2::scoped_connection> m_applied_transaction_connection;
+    // fc::optional<boost::signals2::scoped_connection> m_accepted_block_connection;
+    // fc::optional<boost::signals2::scoped_connection> m_applied_transaction_connection;
 
-    chain_plugin*  m_chain_plug;
-    std::shared_ptr<backend> m_be;
+    // chain_plugin*  m_chain_plug;
+    // std::shared_ptr<backend> m_be;
 
-    pubsub_runtime::pubsub_log_ptr m_log;
+    // pubsub_runtime::pubsub_log_ptr m_log;
+
+    pubsub_plugin_impl_ptr my;
 };
 }
 
