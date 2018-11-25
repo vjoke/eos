@@ -130,6 +130,7 @@ public:
 
     int64_t m_block_offset;
     int64_t m_block_margin;
+    int64_t m_unexpected_txid;
     
     bool m_activated = false;
     std::unique_ptr<consumer<pubsub_message::message_ptr>> m_applied_message_consumer;
@@ -555,7 +556,8 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
             } else {
                 const auto& id = receipt.trx.get<transaction_id_type>();
                 trx_id_str = id.str();
-                elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id_str)); // FIXME: 
+                if( m_unexpected_txid++ % 1000 == 0 )
+                    elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id_str)); // FIXME: 
             }
 
             const auto cpu_usage_us = receipt.cpu_usage_us;
@@ -759,6 +761,7 @@ pubsub_plugin_impl::pubsub_plugin_impl()
     m_activated = false;
     m_block_margin = 0;
     m_block_offset = 0;
+    m_unexpected_txid = 0;
     
     m_log = std::make_shared<pubsub_runtime::pubsub_log>();
     FC_ASSERT(m_log);

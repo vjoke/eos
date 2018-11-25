@@ -284,58 +284,65 @@ void backend::wipe()
 
 void backend::publish(const std::string &msg)
 {
-    // TODO: use boost::any to hold different messages
-    // debugging only global_action_seq
-    int64_t msgid = -1;
-    void *opaque = NULL;
+    try {
+        // TODO: use boost::any to hold different messages
+        // debugging only global_action_seq
+        int64_t msgid = -1;
+        void *opaque = NULL;
 
-    if (msg.find("global_action_seq") != std::string::npos)
-    {
-        auto actions = fc::json::from_string(msg).as<pubsub_message::actions_result>();
-        m_log->latest_tx_block_num = actions.last_irreversible_block;
-    }
-    else
-    {
-        auto block = fc::json::from_string(msg).as<pubsub_message::block_result>();
-        m_log->latest_block_num = block.block_num;
-        m_latest_block = msg;
-    }
+        // FC_THROW("deliberated ${e}", ("e", "crash")); 
 
-    if (msgid != -1)
-    {
-        opaque = (void *)(msgid + 1);
-    }
-    else
-    {
-        opaque = this;
-    }
+        // if (msg.find("global_action_seq") != std::string::npos)
+        // {
+        //     auto actions = fc::json::from_string(msg).as<pubsub_message::actions_result>();
+        //     m_log->latest_tx_block_num = actions.last_irreversible_block;
+        // }
+        // else
+        // {
+        //     auto block = fc::json::from_string(msg).as<pubsub_message::block_result>();
+        //     m_log->latest_block_num = block.block_num;
+        //     m_latest_block = msg;
+        // }
 
-    /* Send/Produce message. */
-    if (rd_kafka_produce(m_rkt, m_partition,
-                         RD_KAFKA_MSG_F_COPY,
-                         /* Payload and length */
-                         (void *)msg.c_str(), msg.length(),
-                         /* Optional key and its length */
-                         NULL, 0,
-                         /* Message opaque, provided in
-					      * delivery report callback as
-					      * msg_opaque. */
-                         opaque) == -1)
-    {
-        std::cout << ">>>> kafka failed to produce to topic " << rd_kafka_topic_name(m_rkt)
-                  << "partition " << m_partition << "error " << rd_kafka_errno2err(errno) << "\n";
-        m_log->error++;
-    }
-    else
-    {
-        m_log->sent++;
-    }
+        if (msgid != -1)
+        {
+            opaque = (void *)(msgid + 1);
+        }
+        else
+        {
+            opaque = this;
+        }
 
-    /* Poll to handle delivery reports */
-    rd_kafka_poll(m_rk, 0);
-    m_log->queue_size = rd_kafka_outq_len(m_rk);
+        /* Send/Produce message. */
+        if (rd_kafka_produce(m_rkt, m_partition,
+                            RD_KAFKA_MSG_F_COPY,
+                            /* Payload and length */
+                            (void *)msg.c_str(), msg.length(),
+                            /* Optional key and its length */
+                            NULL, 0,
+                            /* Message opaque, provided in
+                            * delivery report callback as
+                            * msg_opaque. */
+                            opaque) == -1)
+        {
+            std::cout << ">>>> kafka failed to produce to topic " << rd_kafka_topic_name(m_rkt)
+                    << "partition " << m_partition << "error " << rd_kafka_errno2err(errno) << "\n";
+            m_log->error++;
+        }
+        else
+        {
+            m_log->sent++;
+        }
 
-    dump(msg);
+        /* Poll to handle delivery reports */
+        rd_kafka_poll(m_rk, 0);
+        m_log->queue_size = rd_kafka_outq_len(m_rk);
+
+        dump(msg);
+    } catch (...) {
+        std::cerr << "failed to publish message to kafka\n";
+    }
+    
 }
 
 void backend::dump(const std::string &msg)
