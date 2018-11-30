@@ -131,6 +131,7 @@ public:
     int64_t m_block_offset;
     int64_t m_block_margin;
     int64_t m_unexpected_txid;
+    int64_t m_unpack_failed;
     
     bool m_activated = false;
     std::unique_ptr<consumer<pubsub_message::message_ptr>> m_applied_message_consumer;
@@ -140,7 +141,7 @@ public:
 
     pubsub_runtime::pubsub_log_ptr m_log;
 
-    void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_args> &results);
+    void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_action> &results);
 
 private:
     void on_transaction(const chain::transaction_trace_ptr& t);
@@ -540,7 +541,7 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
 
         for( const auto& receipt : bs->block->transactions ) {
             string trx_id_str;
-            std::vector<pubsub_message::transfer_args> transfer_actions;
+            std::vector<pubsub_message::transfer_action> transfer_actions;
             if( receipt.trx.contains<packed_transaction>() ) {
                 const auto& pt = receipt.trx.get<packed_transaction>();
                 // get id via get_raw_transaction() as packed_transaction.id() mutates internal transaction state
@@ -556,8 +557,9 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
             } else {
                 const auto& id = receipt.trx.get<transaction_id_type>();
                 trx_id_str = id.str();
-                if( m_unexpected_txid++ % 1000 == 0 )
-                    elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id_str)); // FIXME: 
+                if( m_unexpected_txid++ % 1000 == 0 ) {
+                    elog("#### unexpected receipt in trx: ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unexpected_txid)); // FIXME: 
+                }
             }
 
             const auto cpu_usage_us = receipt.cpu_usage_us;
@@ -660,7 +662,7 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
     for (const auto&receipt : block->transactions) {
         chain::transaction_id_type trx_id;
 
-        std::vector<pubsub_message::transfer_args> transfer_actions;
+        std::vector<pubsub_message::transfer_action> transfer_actions;
         if (receipt.trx.contains<chain::transaction_id_type>()) {
             trx_id = receipt.trx.get<chain::transaction_id_type>(); 
             elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id.str())); // FIXME: 
@@ -689,26 +691,55 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
     m_log->count++;
 }
 
-void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_args> &results)
+void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_action> &results)
 {
+    string trx_id_str = tm->id.str();
     try {
         for (const auto &act: tm->trx.actions) {
-            if (act.account == N(eosio.token) && act.name == N(transfer)) {
-                // auto transfer = act.data_as<pubsub_message::transfer_args>();
-                auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
-                results.emplace_back(std::move(transfer));
+            if (filter_include( act.account, act.name, act.authorization)) {
+                try {
+                    auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
+                    results.emplace_back(transfer_action{
+                        act.account,
+                        act.name,
+                        transfer.from,
+                        transfer.to,
+                        transfer.quantity,
+                        transfer.memo
+                    });
+                } catch (...) {
+                    // not transfer action
+                    if( m_unpack_failed++ % 1000 == 0 ) {
+                        elog("#### failed to unpack transfer action in ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unpack_failed)); // FIXME: 
+                    }
+                }
+                
             }
         }
 
         for (const auto &act: tm->trx.context_free_actions) {
-            if (act.account == N(eosio.token) && act.name == N(transfer)) {
-                // auto transfer = act.data_as<pubsub_message::transfer_args>();
-                auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
-                results.emplace_back(std::move(transfer));
+            if (filter_include( act.account, act.name, act.authorization)) {
+                try {
+                    auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
+                    results.emplace_back(transfer_action{
+                        act.account,
+                        act.name,
+                        transfer.from,
+                        transfer.to,
+                        transfer.quantity,
+                        transfer.memo
+                    });
+                } catch (...) {
+                    // not transfer action
+                    if( m_unpack_failed++ % 1000 == 0 ) {
+                        elog("#### failed to unpack transfer action in ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unpack_failed)); // FIXME: 
+                    }
+                }
+                
             }
         }
     } catch (...) {
-        elog("failed to parse transfer action for txid:${txid}", ("txid", tm->id.str()));
+        elog("failed to parse transfer action for txid:${txid}", ("txid", trx_id_str));
     }
 }
 
@@ -762,6 +793,7 @@ pubsub_plugin_impl::pubsub_plugin_impl()
     m_block_margin = 0;
     m_block_offset = 0;
     m_unexpected_txid = 0;
+    m_unpack_failed = 0;
     
     m_log = std::make_shared<pubsub_runtime::pubsub_log>();
     FC_ASSERT(m_log);

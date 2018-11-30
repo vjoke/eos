@@ -47,12 +47,22 @@ namespace pubsub_message {
 
     };
 
+    struct transfer_action {
+        account_name    account;
+        action_name     name;
+
+        account_name    from;
+        account_name    to;
+        asset           quantity;
+        string          memo; 
+    };
+
     struct transaction_result {
         std::string                 trx_id;
         int                         status;
         unsigned int                cpu_usage_us;
         unsigned int                net_usage_words;
-        vector<transfer_args>       transfer_actions;
+        vector<transfer_action>     transfer_actions;
     };
 
     struct block_result {
@@ -159,6 +169,7 @@ private:
 }
 
 FC_REFLECT( eosio::pubsub_message::transfer_args, (from)(to)(quantity)(memo) )
+FC_REFLECT( eosio::pubsub_message::transfer_action, (account)(name)(from)(to)(quantity)(memo) )
 FC_REFLECT( eosio::pubsub_message::transaction_result, (trx_id)(status)(cpu_usage_us)(net_usage_words)(transfer_actions) )
 FC_REFLECT( eosio::pubsub_message::block_result, (block_num)(block_id)(prev_block_id)(timestamp)(transaction_merkle_root)(transaction_count)(producer)(transactions) )
 FC_REFLECT( eosio::pubsub_message::actions_result, (actions)(last_irreversible_block)(time_limit_exceeded_error) )
