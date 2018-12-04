@@ -437,7 +437,8 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
         added = true;
     }
 
-    // TODO: split inline transactions 
+    // FIXME: split inline transactions, a single transfer action will have more than 
+    // one record due to notification medchanism.
     for( const auto& iline_atrace : atrace.inline_traces ) {
         added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace );
     }
