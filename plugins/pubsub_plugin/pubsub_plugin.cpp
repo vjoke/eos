@@ -38,7 +38,6 @@ using chain::packed_transaction;
 
 static appbase::abstract_plugin& _pubsub_plugin = app().register_plugin<pubsub_plugin>();
 
-
 using namespace pubsub_message;
 using namespace eosio;
 
@@ -111,22 +110,23 @@ public:
 
     bool configured{false};
     bool wipe_data_on_startup{false};
-    uint32_t start_block_num = 0;
+    uint32_t m_debug_option = 0;
+    uint32_t m_start_block_num = 0;
     std::atomic_bool start_block_reached{false};
 
-    bool is_producer = false;
-    bool filter_on_star = true;
-    std::set<filter_entry> filter_on;
-    std::set<filter_entry> filter_out;
-    bool update_blocks_via_block_num = false;
-    bool store_blocks = true;
-    bool store_block_states = true;
-    bool store_transactions = true;
-    bool store_transaction_traces = true;
-    bool store_action_traces = true;
-    std::atomic_bool startup{true};
-    fc::optional<chain::chain_id_type> chain_id;
-    fc::microseconds abi_serializer_max_time;
+    bool m_is_producer = false;
+    bool m_filter_on_star = true;
+    std::set<filter_entry> m_filter_on;
+    std::set<filter_entry> m_filter_out;
+    bool m_update_blocks_via_block_num = false;
+    bool m_store_blocks = true;
+    bool m_store_block_states = true;
+    bool m_store_transactions = true;
+    bool m_store_transaction_traces = true;
+    bool m_store_action_traces = true;
+    std::atomic_bool m_startup{true};
+    fc::optional<chain::chain_id_type> m_chain_id;
+    // fc::microseconds abi_serializer_max_time;
 
     int64_t m_block_offset;
     int64_t m_block_margin;
@@ -153,20 +153,20 @@ bool pubsub_plugin_impl::filter_include( const account_name& receiver, const act
                                            const vector<chain::permission_level>& authorization ) const
 {
    bool include = false;
-   if( filter_on_star ) {
+   if( m_filter_on_star ) {
       include = true;
    } else {
-      auto itr = std::find_if( filter_on.cbegin(), filter_on.cend(), [&receiver, &act_name]( const auto& filter ) {
+      auto itr = std::find_if( m_filter_on.cbegin(), m_filter_on.cend(), [&receiver, &act_name]( const auto& filter ) {
          return filter.match( receiver, act_name, 0 );
       } );
-      if( itr != filter_on.cend() ) {
+      if( itr != m_filter_on.cend() ) {
          include = true;
       } else {
          for( const auto& a : authorization ) {
-            auto itr = std::find_if( filter_on.cbegin(), filter_on.cend(), [&receiver, &act_name, &a]( const auto& filter ) {
+            auto itr = std::find_if( m_filter_on.cbegin(), m_filter_on.cend(), [&receiver, &act_name, &a]( const auto& filter ) {
                return filter.match( receiver, act_name, a.actor );
             } );
-            if( itr != filter_on.cend() ) {
+            if( itr != m_filter_on.cend() ) {
                include = true;
                break;
             }
@@ -175,18 +175,18 @@ bool pubsub_plugin_impl::filter_include( const account_name& receiver, const act
    }
 
    if( !include ) { return false; }
-   if( filter_out.empty() ) { return true; }
+   if( m_filter_out.empty() ) { return true; }
 
-   auto itr = std::find_if( filter_out.cbegin(), filter_out.cend(), [&receiver, &act_name]( const auto& filter ) {
+   auto itr = std::find_if( m_filter_out.cbegin(), m_filter_out.cend(), [&receiver, &act_name]( const auto& filter ) {
       return filter.match( receiver, act_name, 0 );
    } );
-   if( itr != filter_out.cend() ) { return false; }
+   if( itr != m_filter_out.cend() ) { return false; }
 
    for( const auto& a : authorization ) {
-      auto itr = std::find_if( filter_out.cbegin(), filter_out.cend(), [&receiver, &act_name, &a]( const auto& filter ) {
+      auto itr = std::find_if( m_filter_out.cbegin(), m_filter_out.cend(), [&receiver, &act_name, &a]( const auto& filter ) {
          return filter.match( receiver, act_name, a.actor );
       } );
-      if( itr != filter_out.cend() ) { return false; }
+      if( itr != m_filter_out.cend() ) { return false; }
    }
 
    return true;
@@ -194,7 +194,7 @@ bool pubsub_plugin_impl::filter_include( const account_name& receiver, const act
 
 bool pubsub_plugin_impl::filter_include( const transaction& trx ) const
 {
-   if( !filter_on_star || !filter_out.empty() ) {
+   if( !m_filter_on_star || !m_filter_out.empty() ) {
       bool include = false;
       for( const auto& a : trx.actions ) {
          if( filter_include( a.account, a.name, a.authorization ) ) {
@@ -217,7 +217,7 @@ bool pubsub_plugin_impl::filter_include( const transaction& trx ) const
 
 void pubsub_plugin_impl::accepted_transaction( const chain::transaction_metadata_ptr& t ) {
    try {
-      if( store_transactions ) {
+      if( m_store_transactions ) {
           process_accepted_transaction(t);
       }
    } catch (fc::exception& e) {
@@ -251,7 +251,7 @@ void pubsub_plugin_impl::applied_transaction( const chain::transaction_trace_ptr
       //
       // It is recommended to run mongo_db_plugin in read-mode = read-only.
       //
-      if( !is_producer && !t->producer_block_id.valid() )
+      if( !m_is_producer && !t->producer_block_id.valid() )
          return;
 
         process_applied_transaction(t);
@@ -267,7 +267,7 @@ void pubsub_plugin_impl::applied_transaction( const chain::transaction_trace_ptr
 
 void pubsub_plugin_impl::applied_irreversible_block( const chain::block_state_ptr& bs ) {
     try {
-        if( store_blocks || store_block_states || store_transactions ) {
+        if( m_store_blocks || m_store_block_states || m_store_transactions ) {
             process_irreversible_block(bs);
         }
     } catch (fc::exception& e) {
@@ -282,11 +282,11 @@ void pubsub_plugin_impl::applied_irreversible_block( const chain::block_state_pt
 void pubsub_plugin_impl::accepted_block( const chain::block_state_ptr& bs ) {
     try {
         if( !start_block_reached ) {
-            if( bs->block_num >= start_block_num ) {
+            if( bs->block_num >= m_start_block_num ) {
                 start_block_reached = true;
             }
         }
-        if( store_blocks || store_block_states ) {
+        if( m_store_blocks || m_store_block_states ) {
             process_accepted_block(bs);
         }
     } catch (fc::exception& e) {
@@ -394,10 +394,10 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
     // }
 
     bool added = false;
-    const bool in_filter = (store_action_traces || store_transaction_traces) && start_block_reached &&
+    const bool in_filter = (m_store_action_traces || m_store_transaction_traces) && start_block_reached &&
                         filter_include( atrace.receipt.receiver, atrace.act.name, atrace.act.authorization );
     write_ttrace |= in_filter;
-    if( start_block_reached && store_action_traces && in_filter ) {
+    if( start_block_reached && m_store_action_traces && in_filter ) {
         const chain::base_action_trace& base = atrace; // without inline action traces
         actions.emplace_back( 
             ordered_action_result{
@@ -519,7 +519,7 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
          std::chrono::microseconds{fc::time_point::now().time_since_epoch().count()});
 
-    if( store_transactions ) {
+    if( m_store_transactions ) {
         bool transactions_in_block = false;
         // fill block information
         m_log->latest_block_num = block_num;
@@ -807,7 +807,7 @@ pubsub_plugin_impl::pubsub_plugin_impl()
 }
 
 pubsub_plugin_impl::~pubsub_plugin_impl() {
-    if (!startup) {
+    if (!m_startup) {
         try {
             ilog( "pubsub_plugin shutdown in process please be patient this can take a few minutes" );
             // done = true;
@@ -826,7 +826,7 @@ void pubsub_plugin_impl::init() {
     ilog("init pubsub");
     m_applied_message_consumer = std::make_unique<consumer<pubsub_message::message_ptr>>(std::make_unique<applied_message>(m_be));
 
-    startup = false;
+    m_startup = false;
 }
 
 
@@ -960,42 +960,46 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
             my->wipe_data_on_startup = true;
         }
 
-        my->abi_serializer_max_time = app().get_plugin<chain_plugin>().get_abi_serializer_max_time();
+        // my->abi_serializer_max_time = app().get_plugin<chain_plugin>().get_abi_serializer_max_time();
+
+        if( options.count("pubsub-debug-option")) {
+            my->m_debug_option = options.at( "pubsub-debug-option" ).as<uint32_t>();
+        }
 
         if( options.count( "pubsub-block-start" )) {
-            my->start_block_num = options.at( "pubsub-block-start" ).as<uint32_t>();
+            my->m_start_block_num = options.at( "pubsub-block-start" ).as<uint32_t>();
         }
         if( options.count( "pubsub-store-blocks" )) {
-            my->store_blocks = options.at( "pubsub-store-blocks" ).as<bool>();
+            my->m_store_blocks = options.at( "pubsub-store-blocks" ).as<bool>();
         }
         if( options.count( "pubsub-store-block-states" )) {
-            my->store_block_states = options.at( "pubsub-store-block-states" ).as<bool>();
+            my->m_store_block_states = options.at( "pubsub-store-block-states" ).as<bool>();
         }
         if( options.count( "pubsub-store-transactions" )) {
-            my->store_transactions = options.at( "pubsub-store-transactions" ).as<bool>();
+            my->m_store_transactions = options.at( "pubsub-store-transactions" ).as<bool>();
         }
         if( options.count( "pubsub-store-transaction-traces" )) {
-            my->store_transaction_traces = options.at( "pubsub-store-transaction-traces" ).as<bool>();
+            my->m_store_transaction_traces = options.at( "pubsub-store-transaction-traces" ).as<bool>();
         }
         if( options.count( "pubsub-store-action-traces" )) {
-            my->store_action_traces = options.at( "pubsub-store-action-traces" ).as<bool>();
+            my->m_store_action_traces = options.at( "pubsub-store-action-traces" ).as<bool>();
         }
         if( options.count( "pubsub-filter-on" )) {
             auto fo = options.at( "pubsub-filter-on" ).as<vector<string>>();
-            my->filter_on_star = false;
+            my->m_filter_on_star = false;
             for( auto& s : fo ) {
                if( s == "*" ) {
-                  my->filter_on_star = true;
+                  my->m_filter_on_star = true;
                   break;
                }
                std::vector<std::string> v;
                boost::split( v, s, boost::is_any_of( ":" ));
                EOS_ASSERT( v.size() == 3, fc::invalid_arg_exception, "Invalid value ${s} for --pubsub-filter-on", ("s", s));
                filter_entry fe{v[0], v[1], v[2]};
-               my->filter_on.insert( fe );
+               my->m_filter_on.insert( fe );
             }
         } else {
-            my->filter_on_star = true;
+            my->m_filter_on_star = true;
         }
         if( options.count( "pubsub-filter-out" )) {
             auto fo = options.at( "pubsub-filter-out" ).as<vector<string>>();
@@ -1004,15 +1008,15 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
                boost::split( v, s, boost::is_any_of( ":" ));
                EOS_ASSERT( v.size() == 3, fc::invalid_arg_exception, "Invalid value ${s} for --pubsub-filter-out", ("s", s));
                filter_entry fe{v[0], v[1], v[2]};
-               my->filter_out.insert( fe );
+               my->m_filter_out.insert( fe );
             }
         }
         if( options.count( "producer-name") ) {
             wlog( "pubsub plugin not recommended on producer node" );
-            my->is_producer = true;
+            my->m_is_producer = true;
         }
 
-        if( my->start_block_num == 0 ) {
+        if( my->m_start_block_num == 0 ) {
             my->start_block_reached = true;
         }
 
@@ -1020,7 +1024,7 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
         chain_plugin* chain_plug = app().find_plugin<chain_plugin>();
         EOS_ASSERT( chain_plug, chain::missing_chain_plugin_exception, "");
         auto& chain = chain_plug->chain();
-        my->chain_id.emplace( chain.get_chain_id());
+        my->m_chain_id.emplace( chain.get_chain_id());
 
         my->accepted_block_connection.emplace( chain.accepted_block.connect( [&]( const chain::block_state_ptr& bs ) {
             my->accepted_block( bs );

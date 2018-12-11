@@ -36,21 +36,12 @@ namespace pubsub_message {
         account_name to;
         asset        quantity;
         string       memo;
-
-        // static chain::account_name get_account() {
-        //     return N(eosio.token); // TODO
-        // }
-
-        // static chain::action_name get_name() {
-        //     return N(transfer);
-        // }
-
     };
 
     struct transfer_action {
         account_name    account;
         action_name     name;
-
+        // action parameters
         account_name    from;
         account_name    to;
         asset           quantity;
@@ -141,29 +132,8 @@ public:
     void plugin_startup();
     void plugin_shutdown();
     pubsub_runtime::runtime_status status();
-//     void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_args> &results);
-
-// private:
-//     void on_transaction(const chain::transaction_trace_ptr& t);
-//     void on_block(const chain::block_state_ptr& b);
-//     void push_block(const chain::signed_block_ptr& block);
-//     void dump();
     
 private:
-    // int64_t m_block_offset;
-    // int64_t m_block_margin;
-    
-    // bool m_activated;
-    // std::unique_ptr<consumer<pubsub_message::message_ptr>> m_applied_message_consumer;
-
-    // fc::optional<boost::signals2::scoped_connection> m_accepted_block_connection;
-    // fc::optional<boost::signals2::scoped_connection> m_applied_transaction_connection;
-
-    // chain_plugin*  m_chain_plug;
-    // std::shared_ptr<backend> m_be;
-
-    // pubsub_runtime::pubsub_log_ptr m_log;
-
     pubsub_plugin_impl_ptr my;
 };
 }
