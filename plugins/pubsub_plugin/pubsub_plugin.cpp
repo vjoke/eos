@@ -110,9 +110,13 @@ public:
 
     bool configured{false};
     bool wipe_data_on_startup{false};
-    uint32_t m_debug_option = 0;
+    #ifdef TEST_ENV
+    bool m_accept_block = true;
+    #else
+    bool m_accept_block = false;
+    #endif
     uint32_t m_start_block_num = 0;
-    std::atomic_bool start_block_reached{false};
+    std::atomic_bool m_start_block_reached{false};
 
     bool m_is_producer = false;
     bool m_filter_on_star = true;
@@ -267,6 +271,10 @@ void pubsub_plugin_impl::applied_transaction( const chain::transaction_trace_ptr
 
 void pubsub_plugin_impl::applied_irreversible_block( const chain::block_state_ptr& bs ) {
     try {
+        if (m_accept_block) {
+            return;
+        }
+
         if( m_store_blocks || m_store_block_states || m_store_transactions ) {
             process_irreversible_block(bs);
         }
@@ -281,11 +289,16 @@ void pubsub_plugin_impl::applied_irreversible_block( const chain::block_state_pt
 
 void pubsub_plugin_impl::accepted_block( const chain::block_state_ptr& bs ) {
     try {
-        if( !start_block_reached ) {
+        if( !m_start_block_reached ) {
             if( bs->block_num >= m_start_block_num ) {
-                start_block_reached = true;
+                m_start_block_reached = true;
             }
         }
+
+        if (!m_accept_block) {
+            return;
+        }
+
         if( m_store_blocks || m_store_block_states ) {
             process_accepted_block(bs);
         }
@@ -324,7 +337,7 @@ void handle_pubsub_exception( const std::string& desc, int line_num ) {
 
 void pubsub_plugin_impl::process_accepted_transaction( const chain::transaction_metadata_ptr& t ) {
     try {
-        if( start_block_reached ) {
+        if( m_start_block_reached ) {
             _process_accepted_transaction( t );
         }
     } catch (fc::exception& e) {
@@ -351,7 +364,7 @@ void pubsub_plugin_impl::process_applied_transaction( const chain::transaction_t
 
 void pubsub_plugin_impl::process_irreversible_block(const chain::block_state_ptr& bs) {
     try {
-        if( start_block_reached ) {
+        if( m_start_block_reached ) {
             _process_irreversible_block( bs );
         }
     } catch (fc::exception& e) {
@@ -365,7 +378,7 @@ void pubsub_plugin_impl::process_irreversible_block(const chain::block_state_ptr
 
 void pubsub_plugin_impl::process_accepted_block( const chain::block_state_ptr& bs ) {
     try {
-        if( start_block_reached ) {
+        if( m_start_block_reached ) {
             _process_accepted_block( bs );
         }
     } catch (fc::exception& e) {
@@ -394,10 +407,10 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
     // }
 
     bool added = false;
-    const bool in_filter = (m_store_action_traces || m_store_transaction_traces) && start_block_reached &&
+    const bool in_filter = (m_store_action_traces || m_store_transaction_traces) && m_start_block_reached &&
                         filter_include( atrace.receipt.receiver, atrace.act.name, atrace.act.authorization );
     write_ttrace |= in_filter;
-    if( start_block_reached && m_store_action_traces && in_filter ) {
+    if( m_start_block_reached && m_store_action_traces && in_filter ) {
         const chain::base_action_trace& base = atrace; // without inline action traces
         actions.emplace_back( 
             ordered_action_result{
@@ -476,7 +489,7 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
         }
     }
 
-    if( !start_block_reached ) return; //< add_action_trace calls update_account which must be called always
+    if( !m_start_block_reached ) return; //< add_action_trace calls update_account which must be called always
 
     // transaction trace insert
 
@@ -506,7 +519,11 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
 }
 
 void pubsub_plugin_impl::_process_accepted_block( const chain::block_state_ptr& bs ) {
-    // TODO: 
+    if (!m_accept_block) {
+        return;
+    }
+
+    on_block(bs);
 }
 
 void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_ptr& bs) {
@@ -596,7 +613,6 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
     }
 }
 
-
 void pubsub_plugin_impl::on_block(const chain::block_state_ptr& b)
 {
     auto &chain = m_chain_plug->chain();
@@ -630,6 +646,10 @@ void pubsub_plugin_impl::on_block(const chain::block_state_ptr& b)
 
 void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block) 
 {
+    if (!m_store_transactions) {
+        return;
+    }
+
     const auto block_num = static_cast<int32_t>(block->block_num());
 
     if ((!m_activated) && (block_num >= m_block_offset)) {
@@ -659,37 +679,93 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
     br->transaction_merkle_root = transaction_merkle_root;
     br->transaction_count = transaction_count;
     br->producer = producer;
-    // get status from receipt
-    for (const auto&receipt : block->transactions) {
-        chain::transaction_id_type trx_id;
 
+    bool transactions_in_block = false; 
+    for( const auto& receipt : block->transactions ) {
+        string trx_id_str;
         std::vector<pubsub_message::transfer_action> transfer_actions;
-        if (receipt.trx.contains<chain::transaction_id_type>()) {
-            trx_id = receipt.trx.get<chain::transaction_id_type>(); 
-            elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id.str())); // FIXME: 
-        } else {
-            auto& pt = receipt.trx.get<chain::packed_transaction>();
+        if( receipt.trx.contains<packed_transaction>() ) {
+            const auto& pt = receipt.trx.get<packed_transaction>();
+            // get id via get_raw_transaction() as packed_transaction.id() mutates internal transaction state
+            const auto& raw = pt.get_raw_transaction();
+            const auto& trx = fc::raw::unpack<transaction>( raw );
+            if( !filter_include( trx ) ) continue;
+
+            const auto& id = trx.id();
+            trx_id_str = id.str();
+            // extract eosio.token:transfer
             auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
-            trx_id = mtrx->id;
             parse_transfer_actions(mtrx, transfer_actions);
+        } else {
+            const auto& id = receipt.trx.get<transaction_id_type>();
+            trx_id_str = id.str();
+            if( m_unexpected_txid++ % 1000 == 0 ) {
+                elog("#### unexpected receipt in trx: ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unexpected_txid)); // FIXME: 
+            }
         }
 
         const auto cpu_usage_us = receipt.cpu_usage_us;
         const auto net_usage_words = receipt.net_usage_words;
 
         br->transactions.emplace_back(transaction_result{
-            trx_id.str(),
+            trx_id_str,
             receipt.status,
-            cpu_usage_us,
-            net_usage_words,
+            receipt.cpu_usage_us,
+            receipt.net_usage_words,
             std::move(transfer_actions)
         });
+
+        transactions_in_block = true;
     }
 
-    const std::string &block_str = fc::json::to_pretty_string(*br);
-    message_ptr block_msg = std::make_shared<std::string>(block_str);
-    m_log->queue_size = m_applied_message_consumer->push(block_msg);
-    m_log->count++;
+    if( transactions_in_block ) {
+        try {
+            const std::string &block_str = fc::json::to_pretty_string(*br);
+            message_ptr block_msg = std::make_shared<std::string>(block_str);
+            #ifdef TEST_ENV
+            idump((block_str));
+            #else
+            m_log->queue_size = m_applied_message_consumer->push(block_msg);
+            #endif
+            m_log->count++;
+            m_log->timestamp = fc::string(fc::time_point::now());
+            
+        } catch( ... ) {
+            handle_pubsub_exception( "push irreversible transaction", __LINE__ );
+        }
+    }
+
+    // get status from receipt
+    // for (const auto&receipt : block->transactions) {
+    //     chain::transaction_id_type trx_id;
+
+    //     std::vector<pubsub_message::transfer_action> transfer_actions;
+    //     if (receipt.trx.contains<chain::transaction_id_type>()) {
+    //         trx_id = receipt.trx.get<chain::transaction_id_type>(); 
+    //         elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id.str())); // FIXME: 
+    //     } else {
+    //         auto& pt = receipt.trx.get<chain::packed_transaction>();
+    //         auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+    //         trx_id = mtrx->id;
+    //         parse_transfer_actions(mtrx, transfer_actions);
+    //     }
+
+    //     const auto cpu_usage_us = receipt.cpu_usage_us;
+    //     const auto net_usage_words = receipt.net_usage_words;
+
+    //     br->transactions.emplace_back(transaction_result{
+    //         trx_id.str(),
+    //         receipt.status,
+    //         cpu_usage_us,
+    //         net_usage_words,
+    //         std::move(transfer_actions)
+    //     });
+    // }
+
+    // const std::string &block_str = fc::json::to_pretty_string(*br);
+    // message_ptr block_msg = std::make_shared<std::string>(block_str);
+    // m_log->queue_size = m_applied_message_consumer->push(block_msg);
+    // m_log->count++;
 }
 
 void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_action> &results)
@@ -834,22 +910,6 @@ void pubsub_plugin_impl::init() {
 pubsub_plugin::pubsub_plugin()
 :my(new pubsub_plugin_impl)
 {
-    // m_chain_plug = app().find_plugin<chain_plugin>();
-    // FC_ASSERT(m_chain_plug);
-
-    // m_activated = false;
-    // m_block_margin = 0;
-    // m_block_offset = 0;
-    
-    // m_log = std::make_shared<pubsub_runtime::pubsub_log>();
-    // FC_ASSERT(m_log);
-    // m_log->tag = "plugin";
-    // m_log->lib = 0;
-    // m_log->count = 0;
-    // m_log->latest_block_num = 0;
-    // m_log->latest_tx_block_num = 0;
-    // m_log->queue_size = 0;
-
 }
 
 void pubsub_plugin::set_program_options(options_description& cli, options_description& cfg)
@@ -962,8 +1022,8 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
 
         // my->abi_serializer_max_time = app().get_plugin<chain_plugin>().get_abi_serializer_max_time();
 
-        if( options.count("pubsub-debug-option")) {
-            my->m_debug_option = options.at( "pubsub-debug-option" ).as<uint32_t>();
+        if( options.count("pubsub-accept-block")) {
+            my->m_accept_block = options.at( "pubsub-accept-block" ).as<bool>();
         }
 
         if( options.count( "pubsub-block-start" )) {
@@ -1017,7 +1077,7 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
         }
 
         if( my->m_start_block_num == 0 ) {
-            my->start_block_reached = true;
+            my->m_start_block_reached = true;
         }
 
         // hook up to signals on controller
