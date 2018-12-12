@@ -15,11 +15,21 @@
 // #define TEST_ENV
 
 namespace {
-const char* PUBSUB_URI_OPTION = "pubsub-uri";
-const char* PUBSUB_TOPIC_OPTION = "pubsub-topic";
-const char* PUBSUB_PARTITION_OPTION = "pubsub-partition";
-const char* PUBSUB_BLOCK_MARGIN_OPTION = "pubsub-block-margin";
-const char* PUBSUB_BLOCK_OFFSET_OPTION = "pubsub-block-offset";
+const char* PUBSUB_URI_OPTION           = "pubsub-uri";
+const char* PUBSUB_TOPIC_OPTION         = "pubsub-topic";
+const char* PUBSUB_PARTITION_OPTION     = "pubsub-partition";
+const char* PUBSUB_BLOCK_MARGIN_OPTION  = "pubsub-block-margin";
+const char* PUBSUB_BLOCK_OFFSET_OPTION  = "pubsub-block-offset";
+const char* PUBSUB_ACCEPT_BLOCK         = "pubsub-accept-block";
+const char* PUBSUB_BLOCK_START          = "pubsub-block-start";
+const char* PUBSUB_UPDATE_VIA_BLOCK_NUM = "pubsub-update-via-block-num";
+const char* PUBSUB_STORE_BLOCKS         = "pubsub-store-blocks";
+const char* PUBSUB_STORE_BLOCK_STATES   = "pubsub-store-block-states";
+const char* PUBSUB_STORE_TRANSACTIONS   = "pubsub-store-transactions";
+const char* PUBSUB_STORE_TRANSACTION_TRACES = "pubsub-store-transaction-traces"; 
+const char* PUBSUB_STORE_ACTION_TRACES  = "pubsub-store-action-traces";
+const char* PUBSUB_FILTER_ON            = "pubsub-filter-on";
+const char* PUBSUB_FILTER_OUT           = "pubsub-filter-out";
 }
 
 namespace fc { class variant; }
@@ -110,11 +120,7 @@ public:
 
     bool configured{false};
     bool wipe_data_on_startup{false};
-    #ifdef TEST_ENV
-    bool m_accept_block = true;
-    #else
     bool m_accept_block = false;
-    #endif
     uint32_t m_start_block_num = 0;
     std::atomic_bool m_start_block_reached{false};
 
@@ -423,30 +429,6 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
             }
         );
 
-        // const chain::base_action_trace& base = atrace; // without inline action traces
-
-        // auto v = to_variant_with_abi( base );
-        // string json = fc::json::to_string( v );
-        // try {
-        //     const auto& value = bsoncxx::from_json( json );
-        //     action_traces_doc.append( bsoncxx::builder::concatenate_doc{value.view()} );
-        // } catch( bsoncxx::exception& ) {
-        //     try {
-        //         json = fc::prune_invalid_utf8( json );
-        //         const auto& value = bsoncxx::from_json( json );
-        //         action_traces_doc.append( bsoncxx::builder::concatenate_doc{value.view()} );
-        //         action_traces_doc.append( kvp( "non-utf8-purged", b_bool{true} ) );
-        //     } catch( bsoncxx::exception& e ) {
-        //         elog( "Unable to convert action trace JSON to MongoDB JSON: ${e}", ("e", e.what()) );
-        //         elog( "  JSON: ${j}", ("j", json) );
-        //     }
-        // }
-        // FIXME: 
-        // if( t->receipt.valid() ) {
-        //     action_traces_doc.append( kvp( "trx_status", std::string( t->receipt->status ) ) );
-        // }
-        // action_traces_doc.append( kvp( "createdAt", b_date{now} ) );
-
         added = true;
     }
 
@@ -491,16 +473,14 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
 
     if( !m_start_block_reached ) return; //< add_action_trace calls update_account which must be called always
 
-    // transaction trace insert
-
-    // insert action_traces
     if( write_atraces ) {
         try {
             if (result->actions.size() > 0) {
-                std::string tx_str = fc::json::to_pretty_string(*result);
                 #ifdef TEST_ENV
+                std::string tx_str = fc::json::to_pretty_string(*result);
                 idump((tx_str));
                 #else
+                std::string tx_str = fc::json::to_string(*result);
                 message_ptr tx_msg = std::make_shared<std::string>(tx_str);
                 m_log->queue_size = m_applied_message_consumer->push(tx_msg);
                 #endif
@@ -508,10 +488,6 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
                 m_log->count++;
                 m_log->timestamp = fc::string(fc::time_point::now());
             }
-            //  if( !bulk_action_traces.execute() ) {
-            //     EOS_ASSERT( false, chain::mongo_db_insert_fail,
-            //                 "Bulk action traces insert failed for transaction trace: ${id}", ("id", t->id) );
-            //  }
         } catch( ... ) {
             handle_pubsub_exception( "publish action traces", __LINE__ );
         }
@@ -596,11 +572,12 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
 
         if( transactions_in_block ) {
             try {
-                const std::string &block_str = fc::json::to_pretty_string(*br);
-                message_ptr block_msg = std::make_shared<std::string>(block_str);
                 #ifdef TEST_ENV
+                const std::string &block_str = fc::json::to_pretty_string(*br);
                 idump((block_str));
                 #else
+                const std::string &block_str = fc::json::to_string(*br);
+                message_ptr block_msg = std::make_shared<std::string>(block_str);
                 m_log->queue_size = m_applied_message_consumer->push(block_msg);
                 #endif
                 m_log->count++;
@@ -720,11 +697,12 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
 
     if( transactions_in_block ) {
         try {
-            const std::string &block_str = fc::json::to_pretty_string(*br);
-            message_ptr block_msg = std::make_shared<std::string>(block_str);
             #ifdef TEST_ENV
+            const std::string &block_str = fc::json::to_pretty_string(*br);
             idump((block_str));
             #else
+            const std::string &block_str = fc::json::to_string(*br);
+            message_ptr block_msg = std::make_shared<std::string>(block_str);
             m_log->queue_size = m_applied_message_consumer->push(block_msg);
             #endif
             m_log->count++;
@@ -734,38 +712,6 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
             handle_pubsub_exception( "push irreversible transaction", __LINE__ );
         }
     }
-
-    // get status from receipt
-    // for (const auto&receipt : block->transactions) {
-    //     chain::transaction_id_type trx_id;
-
-    //     std::vector<pubsub_message::transfer_action> transfer_actions;
-    //     if (receipt.trx.contains<chain::transaction_id_type>()) {
-    //         trx_id = receipt.trx.get<chain::transaction_id_type>(); 
-    //         elog("#### unexpected receipt in trx: ${txid}", ("txid", trx_id.str())); // FIXME: 
-    //     } else {
-    //         auto& pt = receipt.trx.get<chain::packed_transaction>();
-    //         auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
-    //         trx_id = mtrx->id;
-    //         parse_transfer_actions(mtrx, transfer_actions);
-    //     }
-
-    //     const auto cpu_usage_us = receipt.cpu_usage_us;
-    //     const auto net_usage_words = receipt.net_usage_words;
-
-    //     br->transactions.emplace_back(transaction_result{
-    //         trx_id.str(),
-    //         receipt.status,
-    //         cpu_usage_us,
-    //         net_usage_words,
-    //         std::move(transfer_actions)
-    //     });
-    // }
-
-    // const std::string &block_str = fc::json::to_pretty_string(*br);
-    // message_ptr block_msg = std::make_shared<std::string>(block_str);
-    // m_log->queue_size = m_applied_message_consumer->push(block_msg);
-    // m_log->count++;
 }
 
 void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_action> &results)
@@ -853,7 +799,11 @@ void pubsub_plugin_impl::on_transaction(const chain::transaction_trace_ptr& trac
     }
 
     if (result->actions.size() > 0) {
+        #ifdef TEST_ENV
         std::string tx_str = fc::json::to_pretty_string(*result);
+        #else
+        std::string tx_str = fc::json::to_string(*result);
+        #endif
         message_ptr tx_msg = std::make_shared<std::string>(tx_str);
         m_log->latest_tx_block_num = block_num;
         m_log->queue_size = m_applied_message_consumer->push(tx_msg);
@@ -932,28 +882,25 @@ void pubsub_plugin::set_program_options(options_description& cli, options_descri
             (PUBSUB_BLOCK_OFFSET_OPTION, bpo::value<int64_t>(),
              "Pubsub block offset"
              " Default 0 is used if not specified.")
-             
-            ("pubsub-accept-block", bpo::value<bool>()->default_value(false),
+            (PUBSUB_ACCEPT_BLOCK, bpo::value<bool>()->default_value(false),
             "Fetch LIB on accepting blocks")
-
-            ("pubsub-block-start", bpo::value<uint32_t>()->default_value(0),
+            (PUBSUB_BLOCK_START, bpo::value<uint32_t>()->default_value(0),
             "If specified then only abi data pushed to pubsub until specified block is reached.")
-         
-            ("pubsub-update-via-block-num", bpo::value<bool>()->default_value(false),
+            (PUBSUB_UPDATE_VIA_BLOCK_NUM, bpo::value<bool>()->default_value(false),
             "Update blocks/block_state with latest via block number so that duplicates are overwritten.")
-            ("pubsub-store-blocks", bpo::value<bool>()->default_value(true),
+            (PUBSUB_STORE_BLOCKS, bpo::value<bool>()->default_value(true),
                 "Enables storing blocks in pubsub.")
-            ("pubsub-store-block-states", bpo::value<bool>()->default_value(true),
+            (PUBSUB_STORE_BLOCK_STATES, bpo::value<bool>()->default_value(true),
                 "Enables storing block state in pubsub.")
-            ("pubsub-store-transactions", bpo::value<bool>()->default_value(true),
+            (PUBSUB_STORE_TRANSACTIONS, bpo::value<bool>()->default_value(true),
                 "Enables storing transactions in pubsub.")
-            ("pubsub-store-transaction-traces", bpo::value<bool>()->default_value(true),
+            (PUBSUB_STORE_TRANSACTION_TRACES, bpo::value<bool>()->default_value(true),
                 "Enables storing transaction traces in pubsub.")
-            ("pubsub-store-action-traces", bpo::value<bool>()->default_value(true),
+            (PUBSUB_STORE_ACTION_TRACES, bpo::value<bool>()->default_value(true),
                 "Enables storing action traces in pubsub.")
-            ("pubsub-filter-on", bpo::value<vector<string>>()->composing(),
+            (PUBSUB_FILTER_ON, bpo::value<vector<string>>()->composing(),
                 "Track actions which match receiver:action:actor. Receiver, Action, & Actor may be blank to include all. i.e. eosio:: or :transfer:  Use * or leave unspecified to include all.")
-            ("pubsub-filter-out", bpo::value<vector<string>>()->composing(),
+            (PUBSUB_FILTER_OUT, bpo::value<vector<string>>()->composing(),
                 "Do not track actions which match receiver:action:actor. Receiver, Action, & Actor may be blank to exclude all.")
             ;
 }
@@ -1026,30 +973,30 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
 
         // my->abi_serializer_max_time = app().get_plugin<chain_plugin>().get_abi_serializer_max_time();
 
-        if( options.count("pubsub-accept-block")) {
-            my->m_accept_block = options.at( "pubsub-accept-block" ).as<bool>();
+        if( options.count(PUBSUB_ACCEPT_BLOCK)) {
+            my->m_accept_block = options.at( PUBSUB_ACCEPT_BLOCK ).as<bool>();
         }
 
-        if( options.count( "pubsub-block-start" )) {
-            my->m_start_block_num = options.at( "pubsub-block-start" ).as<uint32_t>();
+        if( options.count( PUBSUB_BLOCK_START )) {
+            my->m_start_block_num = options.at( PUBSUB_BLOCK_START ).as<uint32_t>();
         }
-        if( options.count( "pubsub-store-blocks" )) {
-            my->m_store_blocks = options.at( "pubsub-store-blocks" ).as<bool>();
+        if( options.count( PUBSUB_STORE_BLOCKS )) {
+            my->m_store_blocks = options.at( PUBSUB_STORE_BLOCKS ).as<bool>();
         }
-        if( options.count( "pubsub-store-block-states" )) {
-            my->m_store_block_states = options.at( "pubsub-store-block-states" ).as<bool>();
+        if( options.count( PUBSUB_STORE_BLOCK_STATES )) {
+            my->m_store_block_states = options.at( PUBSUB_STORE_BLOCK_STATES ).as<bool>();
         }
-        if( options.count( "pubsub-store-transactions" )) {
-            my->m_store_transactions = options.at( "pubsub-store-transactions" ).as<bool>();
+        if( options.count( PUBSUB_STORE_TRANSACTIONS )) {
+            my->m_store_transactions = options.at( PUBSUB_STORE_TRANSACTIONS ).as<bool>();
         }
-        if( options.count( "pubsub-store-transaction-traces" )) {
-            my->m_store_transaction_traces = options.at( "pubsub-store-transaction-traces" ).as<bool>();
+        if( options.count( PUBSUB_STORE_TRANSACTION_TRACES )) {
+            my->m_store_transaction_traces = options.at( PUBSUB_STORE_TRANSACTION_TRACES ).as<bool>();
         }
-        if( options.count( "pubsub-store-action-traces" )) {
-            my->m_store_action_traces = options.at( "pubsub-store-action-traces" ).as<bool>();
+        if( options.count( PUBSUB_STORE_ACTION_TRACES )) {
+            my->m_store_action_traces = options.at( PUBSUB_STORE_ACTION_TRACES ).as<bool>();
         }
-        if( options.count( "pubsub-filter-on" )) {
-            auto fo = options.at( "pubsub-filter-on" ).as<vector<string>>();
+        if( options.count( PUBSUB_FILTER_ON )) {
+            auto fo = options.at( PUBSUB_FILTER_ON ).as<vector<string>>();
             my->m_filter_on_star = false;
             for( auto& s : fo ) {
                if( s == "*" ) {
@@ -1065,8 +1012,8 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
         } else {
             my->m_filter_on_star = true;
         }
-        if( options.count( "pubsub-filter-out" )) {
-            auto fo = options.at( "pubsub-filter-out" ).as<vector<string>>();
+        if( options.count( PUBSUB_FILTER_OUT )) {
+            auto fo = options.at( PUBSUB_FILTER_OUT ).as<vector<string>>();
             for( auto& s : fo ) {
                std::vector<std::string> v;
                boost::split( v, s, boost::is_any_of( ":" ));
