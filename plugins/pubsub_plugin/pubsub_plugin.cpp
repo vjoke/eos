@@ -932,6 +932,10 @@ void pubsub_plugin::set_program_options(options_description& cli, options_descri
             (PUBSUB_BLOCK_OFFSET_OPTION, bpo::value<int64_t>(),
              "Pubsub block offset"
              " Default 0 is used if not specified.")
+             
+            ("pubsub-accept-block", bpo::value<bool>()->default_value(false),
+            "Fetch LIB on accepting blocks")
+
             ("pubsub-block-start", bpo::value<uint32_t>()->default_value(0),
             "If specified then only abi data pushed to pubsub until specified block is reached.")
          
