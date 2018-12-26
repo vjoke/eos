@@ -418,18 +418,27 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
     write_ttrace |= in_filter;
     if( m_start_block_reached && m_store_action_traces && in_filter ) {
         const chain::base_action_trace& base = atrace; // without inline action traces
-        actions.emplace_back( 
-            ordered_action_result{
-                atrace.receipt.global_sequence,
-                0, // FIXME: 
-                chain.pending_block_state()->block_num, 
-                chain.pending_block_time(),
-                chain.to_variant_with_abi(base, abi_serializer_max_time)
-                // chain.to_variant_with_abi(atrace, abi_serializer_max_time)
-            }
-        );
+        // filter out non-transfer transactions
+        try {
+            auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(base.act.data);
+            actions.emplace_back( 
+                ordered_action_result{
+                    atrace.receipt.global_sequence,
+                    0, // FIXME: 
+                    chain.pending_block_state()->block_num, 
+                    chain.pending_block_time(),
+                    chain.to_variant_with_abi(base, abi_serializer_max_time)
+                    // chain.to_variant_with_abi(atrace, abi_serializer_max_time)
+                }
+            );
 
-        added = true;
+            added = true;
+        } catch (...) {
+            // not transfer action
+            // if( m_unpack_failed++ % 1000 == 0 ) {
+            //     elog("#### failed to unpack transfer action in ${txid} total: ${errs}", ("txid", t->id.str())("errs", m_unpack_failed)); // FIXME: 
+            // }
+        }
     }
 
     // FIXME: split inline transactions, a single transfer action will have more than 
