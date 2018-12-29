@@ -21,6 +21,7 @@ const char* PUBSUB_PARTITION_OPTION     = "pubsub-partition";
 const char* PUBSUB_BLOCK_MARGIN_OPTION  = "pubsub-block-margin";
 const char* PUBSUB_BLOCK_OFFSET_OPTION  = "pubsub-block-offset";
 const char* PUBSUB_ACCEPT_BLOCK         = "pubsub-accept-block";
+const char* PUBSUB_OUTPUT_INLINE_ACTIONS  = "pubsub-output-inline-actions";
 const char* PUBSUB_BLOCK_START          = "pubsub-block-start";
 const char* PUBSUB_UPDATE_VIA_BLOCK_NUM = "pubsub-update-via-block-num";
 const char* PUBSUB_STORE_BLOCKS         = "pubsub-store-blocks";
@@ -110,7 +111,7 @@ public:
     bool add_action_trace( std::vector<ordered_action_result> &actions, const chain::action_trace& atrace,
                           const chain::transaction_trace_ptr& t,
                           bool executed, const std::chrono::milliseconds& now,
-                          bool& write_ttrace );
+                          bool& write_ttrace, uint8_t depth );
     bool filter_include( const account_name& receiver, const action_name& act_name,
                         const vector<chain::permission_level>& authorization ) const;
     bool filter_include( const transaction& trx ) const;
@@ -121,6 +122,7 @@ public:
     bool configured{false};
     bool wipe_data_on_startup{false};
     bool m_accept_block = false;
+    bool m_output_inline_actions = true;
     uint32_t m_start_block_num = 0;
     std::atomic_bool m_start_block_reached{false};
 
@@ -403,7 +405,7 @@ void pubsub_plugin_impl::_process_accepted_transaction( const chain::transaction
 bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &actions, const chain::action_trace& atrace,
                                         const chain::transaction_trace_ptr& t,
                                         bool executed, const std::chrono::milliseconds& now,
-                                        bool& write_ttrace )
+                                        bool& write_ttrace, uint8_t depth )
 {
     auto& chain = m_chain_plug->chain();
     const auto abi_serializer_max_time = m_chain_plug->get_abi_serializer_max_time();
@@ -427,8 +429,8 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
                     0, // FIXME: 
                     chain.pending_block_state()->block_num, 
                     chain.pending_block_time(),
-                    chain.to_variant_with_abi(base, abi_serializer_max_time)
-                    // chain.to_variant_with_abi(atrace, abi_serializer_max_time)
+                    chain.to_variant_with_abi(base, abi_serializer_max_time),
+                    depth
                 }
             );
 
@@ -441,10 +443,12 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
         }
     }
 
+    if (!m_output_inline_actions)
+        return added;
     // FIXME: split inline transactions, a single transfer action will have more than 
     // one record due to notification medchanism.
     for( const auto& iline_atrace : atrace.inline_traces ) {
-        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace );
+        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace, ++depth );
     }
 
     return added;
@@ -474,7 +478,7 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
 
     for( const auto& atrace : t->action_traces ) {
         try {
-            write_atraces |= add_action_trace( result->actions, atrace, t, executed, now, write_ttrace );
+            write_atraces |= add_action_trace( result->actions, atrace, t, executed, now, write_ttrace, 0 );
         } catch(...) {
             handle_pubsub_exception("add action traces", __LINE__);
         }
@@ -800,7 +804,8 @@ void pubsub_plugin_impl::on_transaction(const chain::transaction_trace_ptr& trac
                     account_action_seq,
                     chain.pending_block_state()->block_num, 
                     chain.pending_block_time(),
-                    chain.to_variant_with_abi(at, abi_serializer_max_time)
+                    chain.to_variant_with_abi(at, abi_serializer_max_time),
+                    0
                 }
             );
 
@@ -893,6 +898,8 @@ void pubsub_plugin::set_program_options(options_description& cli, options_descri
              " Default 0 is used if not specified.")
             (PUBSUB_ACCEPT_BLOCK, bpo::value<bool>()->default_value(false),
             "Fetch LIB on accepting blocks")
+            (PUBSUB_OUTPUT_INLINE_ACTIONS, bpo::value<bool>()->default_value(true),
+            "Output inline actions")
             (PUBSUB_BLOCK_START, bpo::value<uint32_t>()->default_value(0),
             "If specified then only abi data pushed to pubsub until specified block is reached.")
             (PUBSUB_UPDATE_VIA_BLOCK_NUM, bpo::value<bool>()->default_value(false),
@@ -984,6 +991,10 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
 
         if( options.count(PUBSUB_ACCEPT_BLOCK)) {
             my->m_accept_block = options.at( PUBSUB_ACCEPT_BLOCK ).as<bool>();
+        }
+
+        if( options.count(PUBSUB_OUTPUT_INLINE_ACTIONS)) {
+            my->m_output_inline_actions = options.at( PUBSUB_OUTPUT_INLINE_ACTIONS ).as<bool>();
         }
 
         if( options.count( PUBSUB_BLOCK_START )) {

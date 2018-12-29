@@ -76,6 +76,7 @@ namespace pubsub_message {
          uint32_t                     block_num;
          chain::block_timestamp_type  block_time;
          fc::variant                  action_trace;
+         uint8_t                      depth;
     };
     // Borrowed from history_plugin
     struct actions_result {
@@ -143,7 +144,7 @@ FC_REFLECT( eosio::pubsub_message::transfer_action, (account)(name)(from)(to)(qu
 FC_REFLECT( eosio::pubsub_message::transaction_result, (trx_id)(status)(cpu_usage_us)(net_usage_words)(transfer_actions) )
 FC_REFLECT( eosio::pubsub_message::block_result, (block_num)(block_id)(prev_block_id)(timestamp)(transaction_merkle_root)(transaction_count)(producer)(transactions) )
 FC_REFLECT( eosio::pubsub_message::actions_result, (actions)(last_irreversible_block)(time_limit_exceeded_error) )
-FC_REFLECT( eosio::pubsub_message::ordered_action_result, (global_action_seq)(account_action_seq)(block_num)(block_time)(action_trace) )
+FC_REFLECT( eosio::pubsub_message::ordered_action_result, (global_action_seq)(account_action_seq)(block_num)(block_time)(action_trace)(depth) )
 FC_REFLECT( eosio::pubsub_runtime::pubsub_log, (tag)(timestamp)(lib)(count)(latest_block_num)(latest_tx_block_num)(queue_size))
 FC_REFLECT( eosio::pubsub_runtime::kafka_log, (tag)(timestamp)(latest_block_num)(latest_tx_block_num)(queue_size)(count)(sent)(success)(error))
 FC_REFLECT( eosio::pubsub_runtime::runtime_status, (plugin)(kafka))
