@@ -22,6 +22,7 @@ const char* PUBSUB_BLOCK_MARGIN_OPTION  = "pubsub-block-margin";
 const char* PUBSUB_BLOCK_OFFSET_OPTION  = "pubsub-block-offset";
 const char* PUBSUB_ACCEPT_BLOCK         = "pubsub-accept-block";
 const char* PUBSUB_OUTPUT_INLINE_ACTIONS  = "pubsub-output-inline-actions";
+const char* PUBSUB_PARSE_TRANSFER_ACTIONS = "pubsub-parse-transfer-actions";
 const char* PUBSUB_BLOCK_START          = "pubsub-block-start";
 const char* PUBSUB_UPDATE_VIA_BLOCK_NUM = "pubsub-update-via-block-num";
 const char* PUBSUB_STORE_BLOCKS         = "pubsub-store-blocks";
@@ -123,6 +124,7 @@ public:
     bool wipe_data_on_startup{false};
     bool m_accept_block = false;
     bool m_output_inline_actions = true;
+    bool m_parse_transfer_actions = true;
     uint32_t m_start_block_num = 0;
     std::atomic_bool m_start_block_reached{false};
 
@@ -554,13 +556,17 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
                 // get id via get_raw_transaction() as packed_transaction.id() mutates internal transaction state
                 const auto& raw = pt.get_raw_transaction();
                 const auto& trx = fc::raw::unpack<transaction>( raw );
-                if( !filter_include( trx ) ) continue;
+                // output all the confirmed trx
+                // if( !filter_include( trx ) ) continue;
 
                 const auto& id = trx.id();
                 trx_id_str = id.str();
-                // extract eosio.token:transfer
-                auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
-                parse_transfer_actions(mtrx, transfer_actions);
+                if (m_parse_transfer_actions) {
+                    // extract eosio.token:transfer
+                    auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                    parse_transfer_actions(mtrx, transfer_actions);
+                }
+                
             } else {
                 const auto& id = receipt.trx.get<transaction_id_type>();
                 trx_id_str = id.str();
@@ -679,13 +685,16 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
             // get id via get_raw_transaction() as packed_transaction.id() mutates internal transaction state
             const auto& raw = pt.get_raw_transaction();
             const auto& trx = fc::raw::unpack<transaction>( raw );
-            if( !filter_include( trx ) ) continue;
+            // output all the confirmed trx
+            // if( !filter_include( trx ) ) continue;
 
             const auto& id = trx.id();
             trx_id_str = id.str();
-            // extract eosio.token:transfer
-            auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
-            parse_transfer_actions(mtrx, transfer_actions);
+            if (m_parse_transfer_actions) {
+                // extract eosio.token:transfer
+                auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                parse_transfer_actions(mtrx, transfer_actions);
+            }
         } else {
             const auto& id = receipt.trx.get<transaction_id_type>();
             trx_id_str = id.str();
@@ -900,6 +909,8 @@ void pubsub_plugin::set_program_options(options_description& cli, options_descri
             "Fetch LIB on accepting blocks")
             (PUBSUB_OUTPUT_INLINE_ACTIONS, bpo::value<bool>()->default_value(true),
             "Output inline actions")
+            (PUBSUB_PARSE_TRANSFER_ACTIONS, bpo::value<bool>()->default_value(true),
+            "Parse transfer actions")
             (PUBSUB_BLOCK_START, bpo::value<uint32_t>()->default_value(0),
             "If specified then only abi data pushed to pubsub until specified block is reached.")
             (PUBSUB_UPDATE_VIA_BLOCK_NUM, bpo::value<bool>()->default_value(false),
@@ -996,6 +1007,10 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
         if( options.count(PUBSUB_OUTPUT_INLINE_ACTIONS)) {
             my->m_output_inline_actions = options.at( PUBSUB_OUTPUT_INLINE_ACTIONS ).as<bool>();
         }
+       
+        if( options.count(PUBSUB_PARSE_TRANSFER_ACTIONS)) {
+            my->m_parse_transfer_actions = options.at( PUBSUB_PARSE_TRANSFER_ACTIONS ).as<bool>();
+        } 
 
         if( options.count( PUBSUB_BLOCK_START )) {
             my->m_start_block_num = options.at( PUBSUB_BLOCK_START ).as<uint32_t>();
