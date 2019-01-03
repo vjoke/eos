@@ -12,8 +12,6 @@
 #include "consumer_core.h"
 #include "applied_message.h"
 
-// #define TEST_ENV
-
 namespace {
 const char* PUBSUB_URI_OPTION           = "pubsub-uri";
 const char* PUBSUB_TOPIC_OPTION         = "pubsub-topic";
@@ -32,6 +30,7 @@ const char* PUBSUB_STORE_TRANSACTION_TRACES = "pubsub-store-transaction-traces";
 const char* PUBSUB_STORE_ACTION_TRACES  = "pubsub-store-action-traces";
 const char* PUBSUB_FILTER_ON            = "pubsub-filter-on";
 const char* PUBSUB_FILTER_OUT           = "pubsub-filter-out";
+const char* PUBSUB_DEBUG                = "pubsub-debug";
 }
 
 namespace fc { class variant; }
@@ -126,6 +125,7 @@ public:
     bool m_output_inline_actions = true;
     bool m_parse_transfer_actions = true;
     uint32_t m_start_block_num = 0;
+    uint32_t m_debug = 0;
     std::atomic_bool m_start_block_reached{false};
 
     bool m_is_producer = false;
@@ -449,8 +449,9 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
         return added;
     // FIXME: split inline transactions, a single transfer action will have more than 
     // one record due to notification medchanism.
+    depth++;
     for( const auto& iline_atrace : atrace.inline_traces ) {
-        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace, ++depth );
+        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace, depth );
     }
 
     return added;
@@ -491,14 +492,14 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
     if( write_atraces ) {
         try {
             if (result->actions.size() > 0) {
-                #ifdef TEST_ENV
-                std::string tx_str = fc::json::to_pretty_string(*result);
-                idump((tx_str));
-                #else
-                std::string tx_str = fc::json::to_string(*result);
-                message_ptr tx_msg = std::make_shared<std::string>(tx_str);
-                m_log->queue_size = m_applied_message_consumer->push(tx_msg);
-                #endif
+                if (m_debug > 0) {
+                    std::string tx_str = fc::json::to_pretty_string(*result);
+                    idump((tx_str));
+                } else {
+                    std::string tx_str = fc::json::to_string(*result);
+                    message_ptr tx_msg = std::make_shared<std::string>(tx_str);
+                    m_log->queue_size = m_applied_message_consumer->push(tx_msg);
+                }
                 m_log->latest_tx_block_num = block_num;
                 m_log->count++;
                 m_log->timestamp = fc::string(fc::time_point::now());
@@ -591,14 +592,14 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
 
         if( transactions_in_block ) {
             try {
-                #ifdef TEST_ENV
-                const std::string &block_str = fc::json::to_pretty_string(*br);
-                idump((block_str));
-                #else
-                const std::string &block_str = fc::json::to_string(*br);
-                message_ptr block_msg = std::make_shared<std::string>(block_str);
-                m_log->queue_size = m_applied_message_consumer->push(block_msg);
-                #endif
+                if (m_debug > 0) {
+                    const std::string &block_str = fc::json::to_pretty_string(*br);
+                    idump((block_str));
+                } else {
+                    const std::string &block_str = fc::json::to_string(*br);
+                    message_ptr block_msg = std::make_shared<std::string>(block_str);
+                    m_log->queue_size = m_applied_message_consumer->push(block_msg);
+                }
                 m_log->count++;
                 m_log->timestamp = fc::string(fc::time_point::now());
                 
@@ -719,14 +720,14 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
 
     if( transactions_in_block ) {
         try {
-            #ifdef TEST_ENV
-            const std::string &block_str = fc::json::to_pretty_string(*br);
-            idump((block_str));
-            #else
-            const std::string &block_str = fc::json::to_string(*br);
-            message_ptr block_msg = std::make_shared<std::string>(block_str);
-            m_log->queue_size = m_applied_message_consumer->push(block_msg);
-            #endif
+            if (m_debug > 0) {
+                const std::string &block_str = fc::json::to_pretty_string(*br);
+                idump((block_str));
+            } else {
+                const std::string &block_str = fc::json::to_string(*br);
+                message_ptr block_msg = std::make_shared<std::string>(block_str);
+                m_log->queue_size = m_applied_message_consumer->push(block_msg);
+            }
             m_log->count++;
             m_log->timestamp = fc::string(fc::time_point::now());
             
@@ -822,11 +823,12 @@ void pubsub_plugin_impl::on_transaction(const chain::transaction_trace_ptr& trac
     }
 
     if (result->actions.size() > 0) {
-        #ifdef TEST_ENV
-        std::string tx_str = fc::json::to_pretty_string(*result);
-        #else
-        std::string tx_str = fc::json::to_string(*result);
-        #endif
+        std::string tx_str;
+        if (m_debug > 0) {
+            tx_str = fc::json::to_pretty_string(*result);
+        } else {
+            tx_str = fc::json::to_string(*result);
+        }
         message_ptr tx_msg = std::make_shared<std::string>(tx_str);
         m_log->latest_tx_block_num = block_num;
         m_log->queue_size = m_applied_message_consumer->push(tx_msg);
@@ -929,6 +931,8 @@ void pubsub_plugin::set_program_options(options_description& cli, options_descri
                 "Track actions which match receiver:action:actor. Receiver, Action, & Actor may be blank to include all. i.e. eosio:: or :transfer:  Use * or leave unspecified to include all.")
             (PUBSUB_FILTER_OUT, bpo::value<vector<string>>()->composing(),
                 "Do not track actions which match receiver:action:actor. Receiver, Action, & Actor may be blank to exclude all.")
+            (PUBSUB_DEBUG, bpo::value<uint32_t>()->default_value(0),
+            "Debug option")
             ;
 }
 
@@ -1060,6 +1064,10 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
         if( options.count( "producer-name") ) {
             wlog( "pubsub plugin not recommended on producer node" );
             my->m_is_producer = true;
+        }
+
+        if( options.count( PUBSUB_DEBUG )) {
+            my->m_debug = options.at( PUBSUB_DEBUG ).as<uint32_t>();
         }
 
         if( my->m_start_block_num == 0 ) {
