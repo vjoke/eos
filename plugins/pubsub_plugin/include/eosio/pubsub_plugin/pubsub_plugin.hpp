@@ -73,7 +73,7 @@ namespace pubsub_message {
     struct ordered_action_result {
          uint64_t                     global_action_seq = 0;
          int32_t                      account_action_seq = 0;
-         uint32_t                     block_num;
+         uint64_t                     block_num;
          chain::block_timestamp_type  block_time;
          fc::variant                  action_trace;
          uint8_t                      depth;
@@ -81,7 +81,7 @@ namespace pubsub_message {
     // Borrowed from history_plugin
     struct actions_result {
          vector<ordered_action_result> actions;
-         uint32_t                      last_irreversible_block;
+         uint64_t                      last_irreversible_block;
          optional<bool>                time_limit_exceeded_error;
       };
 

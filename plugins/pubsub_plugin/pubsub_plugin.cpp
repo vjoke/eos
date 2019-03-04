@@ -564,7 +564,9 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
                 trx_id_str = id.str();
                 if (m_parse_transfer_actions) {
                     // extract eosio.token:transfer
-                    auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                    // auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                    auto mtrx = std::make_shared<chain::transaction_metadata>( std::make_shared<chain::packed_transaction>( pt ) );
+
                     parse_transfer_actions(mtrx, transfer_actions);
                 }
                 
@@ -693,7 +695,8 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
             trx_id_str = id.str();
             if (m_parse_transfer_actions) {
                 // extract eosio.token:transfer
-                auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                // auto mtrx = std::make_shared<chain::transaction_metadata>(pt);
+                auto mtrx = std::make_shared<chain::transaction_metadata>( std::make_shared<chain::packed_transaction>( pt ) );
                 parse_transfer_actions(mtrx, transfer_actions);
             }
         } else {
@@ -741,7 +744,9 @@ void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadat
 {
     string trx_id_str = tm->id.str();
     try {
-        for (const auto &act: tm->trx.actions) {
+        const auto &trx = tm->packed_trx->get_transaction();
+        
+        for (const auto &act: trx.actions) {
             if (filter_include( act.account, act.name, act.authorization)) {
                 try {
                     auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
@@ -763,7 +768,7 @@ void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadat
             }
         }
 
-        for (const auto &act: tm->trx.context_free_actions) {
+        for (const auto &act: trx.context_free_actions) {
             if (filter_include( act.account, act.name, act.authorization)) {
                 try {
                     auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(act.data);
