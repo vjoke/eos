@@ -459,25 +459,22 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
 
 void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_trace_ptr& t ) 
 {
+    bool executed = t->receipt.valid() && t->receipt->status == chain::transaction_receipt_header::executed;
+    if (!executed) {
+        // only output executed transaction 
+        return;
+    }
+
     auto& chain = m_chain_plug->chain();
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::microseconds{fc::time_point::now().time_since_epoch().count()});
 
     bool write_atraces = false;
     bool write_ttrace = false; // filters apply to transaction_traces as well
-    bool executed = t->receipt.valid() && t->receipt->status == chain::transaction_receipt_header::executed;
-
+    
     actions_result_ptr result = std::make_shared<actions_result>();
     auto block_num = chain.pending_block_state()->block_num;
     result->last_irreversible_block = block_num; // FIXME: 
-
-    // if ((!m_activated) && (result->last_irreversible_block >= m_block_offset)) {
-    //     m_activated = true;
-    // }
-    
-    // if (!m_activated) {
-    //     return;
-    // }
 
     for( const auto& atrace : t->action_traces ) {
         try {
@@ -550,6 +547,10 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
         br->producer = producer;
 
         for( const auto& receipt : bs->block->transactions ) {
+            if( receipt.status != chain::transaction_receipt_header::executed ) {
+                // only output executed transaction
+                continue;
+            }
             string trx_id_str;
             std::vector<pubsub_message::transfer_action> transfer_actions;
             if( receipt.trx.contains<packed_transaction>() ) {
@@ -573,9 +574,6 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
             } else {
                 const auto& id = receipt.trx.get<transaction_id_type>();
                 trx_id_str = id.str();
-                if( m_unexpected_txid++ % 1000 == 0 ) {
-                    elog("#### unexpected receipt in trx: ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unexpected_txid)); // FIXME: 
-                }
             }
 
             const auto cpu_usage_us = receipt.cpu_usage_us;
@@ -681,6 +679,10 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
 
     bool transactions_in_block = false; 
     for( const auto& receipt : block->transactions ) {
+        if( receipt.status != chain::transaction_receipt_header::executed ){
+            // only output executed transaction
+            continue;
+        }
         string trx_id_str;
         std::vector<pubsub_message::transfer_action> transfer_actions;
         if( receipt.trx.contains<packed_transaction>() ) {
@@ -702,9 +704,6 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
         } else {
             const auto& id = receipt.trx.get<transaction_id_type>();
             trx_id_str = id.str();
-            if( m_unexpected_txid++ % 1000 == 0 ) {
-                elog("#### unexpected receipt in trx: ${txid} total: ${errs}", ("txid", trx_id_str)("errs", m_unexpected_txid)); // FIXME: 
-            }
         }
 
         const auto cpu_usage_us = receipt.cpu_usage_us;
