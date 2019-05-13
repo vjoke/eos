@@ -5,6 +5,17 @@ find_package(RdKafka REQUIRED ${FIND_PACKAGE_QUIET})
 find_package(Zookeeper REQUIRED ${FIND_PACKAGE_QUIET})
 find_package(JANSSON REQUIRED ${FIND_PACKAGE_QUIET})
 
+FIND_PACKAGE(Boost 1.67 REQUIRED COMPONENTS
+    thread
+)
+
+if (Boost_FOUND)
+    include_directories(${Boost_INCLUDE_DIR})
+    set(EXTRA_LIBS ${EXTRA_LIBS} ${Boost_LIBRARIES})
+    message(STATUS "Boost include dir: ${Boost_INCLUDE_DIR}")
+    message(STATUS "Boost library: ${Boost_LIBRARIES}") 
+endif()
+
 if (RDKAFKA_FOUND)
     include_directories(${RDKAFKA_INCLUDE_DIR})
     set(EXTRA_LIBS ${EXTRA_LIBS} ${RDKAFKA_LIBRARY} ${RDKAFKA_LIBRARY_CPLUSPLUS})
