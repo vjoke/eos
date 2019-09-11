@@ -26,6 +26,7 @@ systemAccounts = [
     'eosio.stake',
     'eosio.token',
     'eosio.vpay',
+    'eosio.rex',
 ]
 
 def jsonArg(a):
@@ -296,7 +297,7 @@ def stepSetSystemContract():
     sleep(1)
     run(args.cleos + 'push action eosio setpriv' + jsonArg(['eosio.msig', 1]) + '-p eosio@active')
 def stepInitSystemContract():
-    run(args.cleos + 'push action eosio init' + jsonArg(['0', '4,SYS']) + '-p eosio@active')
+    run(args.cleos + 'push action eosio init' + jsonArg(['0', '4,' + args.symbol]) + '-p eosio@active')
     sleep(1)
 def stepCreateStakedAccounts():
     createStakedAccounts(0, len(accounts))

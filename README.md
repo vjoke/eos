@@ -26,7 +26,11 @@ Block.one is neither launching nor operating any initial public blockchains base
 
 There is no public testnet running currently.
 
-**If you have previously installed EOSIO, please run the `eosio_uninstall` script (it is in the directory where you cloned EOSIO) before downloading and using the binary releases.**
+---
+
+**If you used our build scripts to install eosio, [please be sure to uninstall](#build-script-uninstall) before using our packages.**
+
+---
 
 #### Mac OS X Brew Install
 ```sh
@@ -37,48 +41,45 @@ $ brew install eosio
 ```sh
 $ brew remove eosio
 ```
-#### Ubuntu 18.04 Debian Package Install
+
+#### Ubuntu 18.04 Package Install
 ```sh
-$ wget https://github.com/eosio/eos/releases/download/v1.7.3/eosio_1.7.3-1-ubuntu-18.04_amd64.deb
-$ sudo apt install ./eosio_1.7.3-1-ubuntu-18.04_amd64.deb
+$ wget https://github.com/eosio/eos/releases/download/v1.8.2/eosio_1.8.2-1-ubuntu-18.04_amd64.deb
+$ sudo apt install ./eosio_1.8.2-1-ubuntu-18.04_amd64.deb
 ```
-#### Ubuntu 16.04 Debian Package Install
+#### Ubuntu 16.04 Package Install
 ```sh
-$ wget https://github.com/eosio/eos/releases/download/v1.7.3/eosio_1.7.3-1-ubuntu-16.04_amd64.deb
-$ sudo apt install ./eosio_1.7.3-1-ubuntu-16.04_amd64.deb
+$ wget https://github.com/eosio/eos/releases/download/v1.8.2/eosio_1.8.2-1-ubuntu-16.04_amd64.deb
+$ sudo apt install ./eosio_1.8.2-1-ubuntu-16.04_amd64.deb
 ```
-#### Debian Package Uninstall
+#### Ubuntu Package Uninstall
 ```sh
 $ sudo apt remove eosio
 ```
 #### Centos RPM Package Install
 ```sh
-$ wget https://github.com/eosio/eos/releases/download/v1.7.3/eosio-1.7.3-1.el7.x86_64.rpm
-$ sudo yum install ./eosio-1.7.3-1.el7.x86_64.rpm
+$ wget https://github.com/eosio/eos/releases/download/v1.8.2/eosio-1.8.2-1.el7.x86_64.rpm
+$ sudo yum install ./eosio-1.8.2-1.el7.x86_64.rpm
 ```
 #### Centos RPM Package Uninstall
 ```sh
 $ sudo yum remove eosio
 ```
-#### Fedora RPM Package Install
-```sh
-$ wget https://github.com/eosio/eos/releases/download/v1.7.3/eosio-1.7.3-1.fc27.x86_64.rpm
-$ sudo yum install ./eosio-1.7.3-1.fc27.x86_64.rpm
-```
-#### Fedora RPM Package Uninstall
-```sh
-$ sudo yum remove eosio
-```
+
+#### Build Script Uninstall
+
+If you have previously installed EOSIO using build scripts, you can execute `eosio_uninstall.sh` to uninstall.
+- Passing `-y` will answer yes to all prompts (does not remove data directories)
+- Passing `-f` will remove data directories (be very careful with this)
+- Passing in `-i` allows you to specify where your eosio installation is located
 
 ## Supported Operating Systems
 EOSIO currently supports the following operating systems:  
-1. Amazon 2017.09 and higher
-2. Centos 7
-3. Fedora 25 and higher (Fedora 27 recommended)
-4. Mint 18
-5. Ubuntu 16.04
-6. Ubuntu 18.04
-7. MacOS Darwin 10.12 and higher (MacOS 10.14.x recommended)
+1. Amazon Linux 2
+2. CentOS 7
+3. Ubuntu 16.04
+4. Ubuntu 18.04
+5. MacOS 10.14 (Mojave)
 
 ## Resources
 1. [Website](https://eos.io)
@@ -106,4 +107,6 @@ Instructions detailing the process of getting the software, building it, running
 
 ## Important
 
-See LICENSE for copyright and license terms.  Block.one makes its contribution on a voluntary basis as a member of the EOSIO community and is not responsible for ensuring the overall performance of the software or any related applications.  We make no representation, warranty, guarantee or undertaking in respect of the software or any related documentation, whether expressed or implied, including but not limited to the warranties or merchantability, fitness for a particular purpose and noninfringement. In no event shall we be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the software or documentation or the use or other dealings in the software or documentation.  Any test results or performance figures are indicative and will not reflect performance under all conditions.  Any reference to any third party or third-party product, service or other resource is not an endorsement or recommendation by Block.one.  We are not responsible, and disclaim any and all responsibility and liability, for your use of or reliance on any of these resources. Third-party resources may be updated, changed or terminated at any time, so the information here may be out of date or inaccurate.
+See [LICENSE](./LICENSE) for copyright and license terms.
+
+All repositories and other materials are provided subject to the terms of this [IMPORTANT](./IMPORTANT.md) notice and you must familiarize yourself with its terms.  The notice contains important information, limitations and restrictions relating to our software, publications, trademarks, third-party resources, and forward-looking statements.  By accessing any of our repositories and other materials, you accept and agree to the terms of the notice.
