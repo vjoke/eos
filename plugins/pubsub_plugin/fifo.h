@@ -5,9 +5,12 @@
 
 #pragma once
 
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/condition_variable.hpp>
-#include <boost/thread/thread.hpp>
+// #include <boost/thread/mutex.hpp>
+// #include <boost/thread/condition_variable.hpp>
+// #include <boost/thread/thread.hpp>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
 #include <boost/atomic.hpp>
 
 #include <atomic>
@@ -31,8 +34,8 @@ public:
     void set_behavior(behavior value);
 
 private:
-    boost::mutex m_mux;
-    boost::condition_variable m_cond;
+    std::mutex m_mux;
+    std::condition_variable m_cond;
     boost::atomic<behavior> m_behavior;
 
     std::deque<T> m_deque;
@@ -47,10 +50,12 @@ fifo<T>::fifo(behavior value)
 template<typename T>
 uint32_t fifo<T>::push(const T& element)
 {
-    boost::mutex::scoped_lock lock(m_mux);
-
-    m_deque.push_back(element);
-    lock.unlock();
+    if (true) {
+        std::scoped_lock lock(m_mux);
+        m_deque.push_back(element);
+        // lock.unlock();
+    }
+    
     m_cond.notify_one();
 
     return m_deque.size();
@@ -59,7 +64,8 @@ uint32_t fifo<T>::push(const T& element)
 template<typename T>
 std::vector<T> fifo<T>::pop_all()
 {
-    boost::mutex::scoped_lock lock(m_mux);
+    // std::scoped_lock lock(m_mux);
+    std::unique_lock<std::mutex> lock(m_mux);
     while (m_behavior == behavior::blocking && m_deque.empty()) {
         m_cond.wait(lock);
     }
@@ -70,6 +76,8 @@ std::vector<T> fifo<T>::pop_all()
         result.push_back(std::move(m_deque.front()));
         m_deque.pop_front();
     }
+    lock.unlock();
+
     return result;
 }
 

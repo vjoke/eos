@@ -140,7 +140,6 @@ public:
     bool m_store_action_traces = true;
     std::atomic_bool m_startup{true};
     fc::optional<chain::chain_id_type> m_chain_id;
-    // fc::microseconds abi_serializer_max_time;
 
     int64_t m_block_offset;
     int64_t m_block_margin;
@@ -158,7 +157,6 @@ public:
     void parse_transfer_actions(const chain::transaction_metadata_ptr& tm, std::vector<pubsub_message::transfer_action> &results);
 
 private:
-    void on_transaction(const chain::transaction_trace_ptr& t);
     void on_block(const chain::block_state_ptr& b);
     void push_block(const chain::signed_block_ptr& block);
 };
@@ -416,22 +414,29 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
     //     update_account( atrace, atrace.act );
     // }
 
+    // FIXME: On error, the transaction trace will now included the action traces for any actions 
+    // that were scheduled but not yet successfully executed by the point of the error. 
+    // Any action that has not successfully executed will have an empty receipt
+    if ( !(t->receipt.valid() && atrace.receipt.valid() ) ) {
+        return false;
+    }
+
     bool added = false;
     const bool in_filter = (m_store_action_traces || m_store_transaction_traces) && m_start_block_reached &&
-                        filter_include( atrace.receipt.receiver, atrace.act.name, atrace.act.authorization );
+                        filter_include( atrace.receiver, atrace.act.name, atrace.act.authorization );
     write_ttrace |= in_filter;
     if( m_start_block_reached && m_store_action_traces && in_filter ) {
-        const chain::base_action_trace& base = atrace; // without inline action traces
+        // const chain::base_action_trace& base = atrace; // without inline action traces
         // filter out non-transfer transactions
         try {
-            auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(base.act.data);
+            auto transfer = fc::raw::unpack<pubsub_message::transfer_args>(atrace.act.data);
             actions.emplace_back( 
                 ordered_action_result{
-                    atrace.receipt.global_sequence,
+                    atrace.receipt->global_sequence,
                     0, // FIXME: 
-                    chain.pending_block_state()->block_num, 
+                    chain.head_block_state()->block_num + 1, // FIXME:
                     chain.pending_block_time(),
-                    chain.to_variant_with_abi(base, abi_serializer_max_time),
+                    chain.to_variant_with_abi(atrace, abi_serializer_max_time),
                     depth
                 }
             );
@@ -443,15 +448,6 @@ bool pubsub_plugin_impl::add_action_trace( std::vector<ordered_action_result> &a
             //     elog("#### failed to unpack transfer action in ${txid} total: ${errs}", ("txid", t->id.str())("errs", m_unpack_failed)); // FIXME: 
             // }
         }
-    }
-
-    if (!m_output_inline_actions)
-        return added;
-    // FIXME: split inline transactions, a single transfer action will have more than 
-    // one record due to notification medchanism.
-    depth++;
-    for( const auto& iline_atrace : atrace.inline_traces ) {
-        added |= add_action_trace( actions, iline_atrace, t, executed, now, write_ttrace, depth );
     }
 
     return added;
@@ -473,7 +469,7 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
     bool write_ttrace = false; // filters apply to transaction_traces as well
     
     actions_result_ptr result = std::make_shared<actions_result>();
-    auto block_num = chain.pending_block_state()->block_num;
+    auto block_num = chain.last_irreversible_block_num();
     result->last_irreversible_block = block_num; // FIXME: 
 
     for( const auto& atrace : t->action_traces ) {
@@ -793,53 +789,6 @@ void pubsub_plugin_impl::parse_transfer_actions(const chain::transaction_metadat
     }
 }
 
-void pubsub_plugin_impl::on_transaction(const chain::transaction_trace_ptr& trace) {
-    auto& chain = m_chain_plug->chain();
-    const auto abi_serializer_max_time = m_chain_plug->get_abi_serializer_max_time();
-
-    actions_result_ptr result = std::make_shared<actions_result>();
-    auto block_num = chain.pending_block_state()->block_num;
-    result->last_irreversible_block = block_num;
-
-    if ((!m_activated) && (result->last_irreversible_block >= m_block_offset)) {
-        m_activated = true;
-    }
-    
-    if (!m_activated) {
-        return;
-    }
-
-    for( const auto& at : trace->action_traces ) {
-        int32_t account_action_seq = 0; 
-        if (at.act.name != N(onblock)) {
-            result->actions.emplace_back( 
-                ordered_action_result{
-                    at.receipt.global_sequence,
-                    account_action_seq,
-                    chain.pending_block_state()->block_num, 
-                    chain.pending_block_time(),
-                    chain.to_variant_with_abi(at, abi_serializer_max_time),
-                    0
-                }
-            );
-
-        }
-    }
-
-    if (result->actions.size() > 0) {
-        std::string tx_str;
-        if (m_debug > 0) {
-            tx_str = fc::json::to_pretty_string(*result);
-        } else {
-            tx_str = fc::json::to_string(*result);
-        }
-        message_ptr tx_msg = std::make_shared<std::string>(tx_str);
-        m_log->latest_tx_block_num = block_num;
-        m_log->queue_size = m_applied_message_consumer->push(tx_msg);
-        m_log->count++;
-    }
-}
-
 pubsub_plugin_impl::pubsub_plugin_impl()
 {
     m_chain_plug = app().find_plugin<chain_plugin>();
@@ -1096,8 +1045,8 @@ void pubsub_plugin::plugin_initialize(const variables_map& options)
                   my->accepted_transaction( t );
                } ));
         my->applied_transaction_connection.emplace(
-               chain.applied_transaction.connect( [&]( const chain::transaction_trace_ptr& t ) {
-                  my->applied_transaction( t );
+               chain.applied_transaction.connect( [&]( std::tuple<const chain::transaction_trace_ptr&, const chain::signed_transaction&> t ) {
+                  my->applied_transaction( std::get<0>(t) );
                } ));
 
         if( my->wipe_data_on_startup ) {
