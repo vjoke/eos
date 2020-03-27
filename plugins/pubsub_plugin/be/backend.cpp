@@ -184,6 +184,14 @@ backend::backend(const std::string &uri, const std::string &topic, const int par
     {
         FC_THROW("Kafka set conf error ${e}", ("e", errstr));
     }
+    // Set the maximum message size to 10M
+    res = rd_kafka_conf_set(m_conf, "message.max.bytes", "10485760",
+                            errstr, sizeof(errstr));
+
+    if (res != RD_KAFKA_CONF_OK)
+    {
+        FC_THROW("Kafka set conf error ${e}", ("e", errstr));
+    }
 
     res = rd_kafka_conf_set(m_conf, "broker.version.fallback", "0.8.2.2",
                             errstr, sizeof(errstr));
@@ -326,7 +334,8 @@ void backend::publish(const std::string &msg)
                             opaque) == -1)
         {
             std::cout << ">>>> kafka failed to produce to topic " << rd_kafka_topic_name(m_rkt)
-                    << "partition " << m_partition << "error " << rd_kafka_errno2err(errno) << "\n";
+                    << " partition: " << m_partition << " error: " << rd_kafka_errno2err(errno) 
+                    << " message size: " << msg.length() << "\n";
             m_log->error++;
         }
         else
