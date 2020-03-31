@@ -143,7 +143,7 @@ class Cluster(object):
     # pylint: disable=too-many-branches
     # pylint: disable=too-many-statements
     def launch(self, pnodes=1, unstartedNodes=0, totalNodes=1, prodCount=1, topo="mesh", delay=1, onlyBios=False, dontBootstrap=False,
-               totalProducers=None, sharedProducers=0, extraNodeosArgs=None, useBiosBootFile=True, specificExtraNodeosArgs=None, onlySetProds=False,
+               totalProducers=None, sharedProducers=0, extraNodeosArgs=" --http-max-response-time-ms 990000 ", useBiosBootFile=True, specificExtraNodeosArgs=None, onlySetProds=False,
                pfSetupPolicy=PFSetupPolicy.FULL, alternateVersionLabelsFile=None, associatedNodeLabels=None, loadSystemContract=True):
         """Launch cluster.
         pnodes: producer nodes count
@@ -1289,10 +1289,14 @@ class Cluster(object):
         if not biosNode.waitForTransInBlock(transId):
             Utils.Print("ERROR: Failed to validate transaction %s got rolled into a block on server port %d." % (transId, biosNode.port))
             return None
-        action="init"
-        data="{\"version\":0,\"core\":\"4,%s\"}" % (CORE_SYMBOL)
-        opts="--permission %s@active" % (eosioAccount.name)
-        trans=biosNode.pushMessage(eosioAccount.name, action, data, opts)
+
+        # Only call init if the system contract is loaded
+        if loadSystemContract:
+            action="init"
+            data="{\"version\":0,\"core\":\"4,%s\"}" % (CORE_SYMBOL)
+            opts="--permission %s@active" % (eosioAccount.name)
+            trans=biosNode.pushMessage(eosioAccount.name, action, data, opts)
+
         Utils.Print("Cluster bootstrap done.")
 
         return biosNode

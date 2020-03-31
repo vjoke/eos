@@ -360,7 +360,7 @@ void print_action( const fc::variant& at ) {
    const auto& act = at["act"].get_object();
    auto code = act["account"].as_string();
    auto func = act["name"].as_string();
-   auto args = fc::json::to_string( act["data"] );
+   auto args = fc::json::to_string( act["data"], fc::time_point::maximum() );
    auto console = at["console"].as_string();
 
    /*
@@ -2329,6 +2329,7 @@ int main( int argc, char** argv ) {
    setlocale(LC_ALL, "");
    bindtextdomain(locale_domain, locale_path);
    textdomain(locale_domain);
+   fc::logger::get(DEFAULT_LOGGER).set_log_level(fc::log_level::debug);
    context = eosio::client::http::create_http_context();
    wallet_url = default_wallet_url;
 
@@ -2795,7 +2796,7 @@ int main( int argc, char** argv ) {
                   args = fc::json::to_pretty_string( act["data"] );
               }
               else {
-                 args = fc::json::to_string( act["data"] );
+                 args = fc::json::to_string( act["data"], fc::time_point::maximum() );
                  if( !fullact ) {
                     args = args.substr(0,60) + "...";
                  }
