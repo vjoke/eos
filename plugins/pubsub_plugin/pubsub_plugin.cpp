@@ -58,7 +58,7 @@ using namespace eosio;
           try { \
              if (body.empty()) body = "{}"; \
              INVOKE \
-             cb(http_response_code, fc::json::to_string(result)); \
+             cb(http_response_code, fc::json::to_string(result, fc::time_point::maximum())); \
           } catch (...) { \
              http_plugin::handle_exception(#api_name, #call_name, body, cb); \
           } \
@@ -489,7 +489,7 @@ void pubsub_plugin_impl::_process_applied_transaction( const chain::transaction_
                     std::string tx_str = fc::json::to_pretty_string(*result);
                     idump((tx_str));
                 } else {
-                    std::string tx_str = fc::json::to_string(*result);
+                    std::string tx_str = fc::json::to_string(*result, fc::time_point::maximum());
                     message_ptr tx_msg = std::make_shared<std::string>(tx_str);
                     m_log->queue_size = m_applied_message_consumer->push(tx_msg);
                 }
@@ -592,7 +592,7 @@ void pubsub_plugin_impl::_process_irreversible_block(const chain::block_state_pt
                     const std::string &block_str = fc::json::to_pretty_string(*br);
                     idump((block_str));
                 } else {
-                    const std::string &block_str = fc::json::to_string(*br);
+                    const std::string &block_str = fc::json::to_string(*br, fc::time_point::maximum());
                     message_ptr block_msg = std::make_shared<std::string>(block_str);
                     m_log->queue_size = m_applied_message_consumer->push(block_msg);
                 }
@@ -722,7 +722,7 @@ void pubsub_plugin_impl::push_block(const chain::signed_block_ptr& block)
                 const std::string &block_str = fc::json::to_pretty_string(*br);
                 idump((block_str));
             } else {
-                const std::string &block_str = fc::json::to_string(*br);
+                const std::string &block_str = fc::json::to_string(*br, fc::time_point::maximum());
                 message_ptr block_msg = std::make_shared<std::string>(block_str);
                 m_log->queue_size = m_applied_message_consumer->push(block_msg);
             }
